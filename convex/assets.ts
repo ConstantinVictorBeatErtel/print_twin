@@ -114,6 +114,16 @@ export const place = mutation({
     ctx.db.insert("placements", { room, assetId, position, rotation, scale }),
 });
 
+/** Remove every object placed in a room. Irreversible — placements have no undo. */
+export const clearRoom = mutation({
+  args: { room: v.string() },
+  handler: async (ctx, { room }) => {
+    const ps = await ctx.db.query("placements").withIndex("by_room", (q) => q.eq("room", room)).collect();
+    for (const p of ps) await ctx.db.delete("placements", p._id);
+    return ps.length;
+  },
+});
+
 export const movePlacement = mutation({
   args: { id: v.id("placements"), position: v.array(v.number()), rotation: v.optional(v.array(v.number())) },
   handler: async (ctx, { id, position, rotation }) => { await ctx.db.patch(id, { position, ...(rotation ? { rotation } : {}) }); },
