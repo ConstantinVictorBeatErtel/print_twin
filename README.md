@@ -30,6 +30,8 @@ npm run world -- resume --job hackathon-room-video-01
 
 This run completed successfully. [Result and quality assessment](docs/FIRST_WORLD_RESULT.md).
 
+[Download the full room and prepared captures](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/room-capture-2026-09-05). The release includes the full-resolution splat and all other returned room assets. [Capture-to-world workflow and planned people removal](docs/ROOM_CREATION_WORKFLOW.md). The current room contains people; the next version should be unoccupied, and new generation is currently on hold at the user's request.
+
 The CLI waits up to 20 minutes by default. `--wait 0` submits and checks once; `resume` continues polling/downloading using the saved operation, without creating another world. `--poll` accepts 1–60 seconds. A completed job exits immediately.
 
 ## Other input modes
@@ -62,7 +64,7 @@ Each job creates `data/worlds/JOB/`:
 - `manifest.json`: portable integration record with relative asset paths, byte sizes, SHA-256 checksums, model, world ID, and coordinate metadata.
 - `assets/`: all returned SPZ resolutions (the first run includes 100k, 150k, 500k, and full resolution); GLB collider; panorama; thumbnail (when returned).
 
-These files are local and private. To display a world later, store the assets in the chosen application storage and map manifest paths to URLs. Start the laptop viewer with the 500k SPZ in Three.js + Spark; keep the collider separate. No provider key is needed to render already downloaded assets.
+Working files remain local and ignored by Git. The first room's binary assets and prepared inputs are also distributed in the public GitHub release linked above, as requested; raw provider responses and credentials remain local. To display a world later, store the assets in the chosen application storage and map manifest paths to URLs. Start the laptop viewer with the 500k SPZ in Three.js + Spark; keep the collider separate. No provider key is needed to render already downloaded assets.
 
 `splatToApp` applies provider metric scale, then ground offset, then a 180-degree X rotation. It is a column-major matrix. Missing/invalid metadata produces a null matrix. `colliderToApp` deliberately stays null until collider/splat landmark alignment is verified. `calibration: unmeasured` means provider metric metadata has not been checked against physical measurements. Do not enable measured placement just because the generation succeeded. [Rendering reference](https://docs.worldlabs.ai/api/rendering-spz).
 
