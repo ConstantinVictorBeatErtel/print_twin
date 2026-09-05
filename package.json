@@ -1,10 +1,35 @@
 {
   "name": "print-the-world",
   "private": true,
+  "version": "0.1.0",
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
     "world": "node scripts/world.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "dev": "concurrently \"npx convex dev\" \"vite\"",
+    "dev:web": "vite",
+    "dev:convex": "npx convex dev",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.0",
+    "@react-three/fiber": "^9.3.0",
+    "@sparkjsdev/spark": "^2.1.0",
+    "convex": "^1.40.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/three": "^0.180.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
   }
 }
