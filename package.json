@@ -1,0 +1,10 @@
+{
+  "name": "print-the-world",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "world": "node scripts/world.mjs",
+    "test": "node --test"
+  }
+}
