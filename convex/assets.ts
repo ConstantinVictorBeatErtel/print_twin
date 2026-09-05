@@ -117,11 +117,10 @@ export const generateFromImage = action({
  */
 export const startSketch = mutation({
   args: {
-    imageStorageId: v.id("_storage"),
-    cleanStorageId: v.optional(v.id("_storage")),
+    sketchStorageId: v.id("_storage"),
     description: v.string(),
   },
-  handler: async (ctx, { imageStorageId, cleanStorageId, description }): Promise<Id<"assets">> => {
+  handler: async (ctx, { sketchStorageId, description }): Promise<Id<"assets">> => {
     const text = description.trim();
     if (!text) throw new Error("Describe what you drew before generating.");
     if (text.length > 8000) throw new Error("Keep the description under 8,000 characters.");
@@ -133,7 +132,7 @@ export const startSketch = mutation({
     const id = await ctx.db.insert("assets", {
       prompt: text, description: text, model: "P1-20260311", status: "generating", stage: "image",
     });
-    await ctx.scheduler.runAfter(0, internal.sketch.run, { id, imageStorageId, cleanStorageId, description: text });
+    await ctx.scheduler.runAfter(0, internal.sketch.run, { id, sketchStorageId, description: text });
     return id;
   },
 });

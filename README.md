@@ -265,10 +265,15 @@ npx convex env set TRIPO_API_KEY <key>  # Tripo: textured P1 models
 npm run dev
 ```
 
-`assets.startSketch` stores the two screenshots, inserts the object row and returns its
-id immediately; `sketch.run` then does the paid work on the scheduler:
+The browser uploads only the cropped sketch strokes on a transparent PNG background.
+The room snapshot stays in the browser as the drawing backdrop. `assets.startSketch`
+receives the sketch storage ID and full description, inserts the object row and returns
+its ID immediately; `sketch.run` then does the paid work on the scheduler:
 
-1. **Image** — fal FLUX.2 Klein 9B edits your annotated frame into a clean isolated object.
+1. **Image** — fal FLUX.2 Klein 9B receives one transparent sketch image and the full
+   description plus object-generation instructions. The backend sends PNG bytes as a
+   base64 data URI, so local Convex storage does not need to be publicly accessible.
+   The model creates a clean isolated object on white for background removal.
 2. **Cutout** — fal BiRefNet removes the background; a PNG with no transparent or no
    visible pixels is rejected before any 3D task is submitted.
 3. **3D + color** — Tripo P1 `image_to_model` with `texture: true`,

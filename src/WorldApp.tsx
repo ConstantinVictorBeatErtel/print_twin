@@ -199,11 +199,11 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         if (!response.ok) throw new Error(`Upload failed (HTTP ${response.status}).`);
         return (await response.json()).storageId as Id<"_storage">;
       };
-      const [imageStorageId, cleanStorageId] = await Promise.all([store(request.image), store(request.cleanImage)]);
-      const assetId = await startSketch({ imageStorageId, cleanStorageId, description: request.description });
+      const sketchStorageId = await store(request.strokeImage);
+      const assetId = await startSketch({ sketchStorageId, description: request.description });
       const next = { assetId, anchor: request.anchor, startedAt: Date.now(), strokeImage: request.strokeImage };
-      // The cutout is only a visual placeholder: if it will not fit, keep the job and lose the
-      // hanging sketch on reload rather than failing the whole submission.
+      // The uploaded sketch also serves as a local visual placeholder. If it will not fit,
+      // keep the job and lose the hanging sketch on reload rather than failing submission.
       try {
         localStorage.setItem(ANCHOR_KEY, JSON.stringify(next.strokeImage.length > STROKE_BUDGET ? { ...next, strokeImage: undefined } : next));
       } catch { /* quota: the anchor alone still recovers the job */ }

@@ -6,14 +6,14 @@ import { anchorDrawing, drawingBounds, type DrawingAnchor, type DrawingBounds, t
 export type DrawingCapture = { image: HTMLCanvasElement; anchor: (bounds: DrawingBounds) => DrawingAnchor };
 // `strokeImage` is the ink alone on transparency, cropped to `anchor.bounds`, so it can be
 // hung back in the room on the quad those same bounds unproject to (see SketchGhost).
-export type DrawingRequest = { image: string; cleanImage: string; strokeImage: string; description: string; anchor: DrawingAnchor };
+export type DrawingRequest = { strokeImage: string; description: string; anchor: DrawingAnchor };
 export function DrawingBridge({ captureRef }: { captureRef: React.MutableRefObject<(() => DrawingCapture) | null> }) {
   const { gl, camera, scene } = useThree();
   useEffect(() => {
     captureRef.current = () => {
       gl.render(scene, camera);
       const image = document.createElement("canvas");
-      // One capped snapshot avoids Retina-sized uploads and retains the viewport's aspect.
+      // Local drawing backdrop only; generation receives the transparent ink cutout.
       const ratio = Math.min(1, 1280 / Math.max(gl.domElement.width, gl.domElement.height));
       image.width = Math.round(gl.domElement.width * ratio); image.height = Math.round(gl.domElement.height * ratio);
       image.getContext("2d")!.drawImage(gl.domElement, 0, 0, image.width, image.height);
@@ -111,8 +111,7 @@ export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMess
     <form className="drawing-composer" onSubmit={(e) => {
       e.preventDefault();
       if (blocked || !bounds || !anchor || !description.trim() || current.current) return;
-      void onGenerate({ image: canvasRef.current!.toDataURL("image/png"), cleanImage: capture.image.toDataURL("image/png"),
-        strokeImage: strokeCutout(anchor.bounds), description: description.trim(), anchor });
+      void onGenerate({ strokeImage: strokeCutout(anchor.bounds), description: description.trim(), anchor });
     }}>
       <div className="drawing-tools"><span>{anchor ? "Size estimated · You'll choose where to place it" : "Draw the object's outline"}</span>
         <button type="button" disabled={!strokes.current.length} onClick={() => { strokes.current.pop(); refreshAnchor(); }}>Undo stroke</button>

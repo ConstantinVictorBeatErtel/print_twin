@@ -5,7 +5,7 @@
 // server (server/asset-pipeline.js) so keys stay in the Convex deployment and the
 // finished object lands in Convex storage where every player in the room can see it.
 //
-//   drawing + clean view  -> fal FLUX.2 Klein 9B edit   (isolated object on white)
+//   transparent sketch + prompt -> fal FLUX.2 Klein 9B edit (isolated object on white)
 //                         -> fal BiRefNet                (transparent cutout)
 //                         -> Tripo P1 image_to_model     (textured GLB)
 //                         -> inspectGlb requireColor     (reject the gray base mesh)
@@ -21,7 +21,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { credentials, makeApi, generationPayload, waitForTask, MODEL } from "./tripo";
 // Reused verbatim from the CLI: Klein + BiRefNet + the PNG alpha check.
-import { runWorkflow } from "../scripts/image-benchmark/providers.mjs";
+import { inspectPng, runWorkflow } from "../scripts/image-benchmark/providers.mjs";
 
 // providers.mjs is plain JS. convex/tsconfig.json has allowJs, so its inference (which
 // only sees the defaults, losing `env`, `imageUrls` and onProgress's argument) wins over
@@ -36,17 +36,16 @@ import { inspectGlb, modelArtifact } from "../scripts/glb-assets.mjs";
 const TASK_TIMEOUT_MS = 300_000;
 
 /**
- * The drawing marks are instructions, not geometry. This wording is what produced a
- * clean isolated object from an annotated room screenshot; changing it changes results.
+ * The input contains only drawing marks on transparency. Keep the complete user
+ * description alongside the instructions for turning that outline into an object.
  */
-function buildPrompt(description: string, hasCleanView: boolean) {
+function buildPrompt(description: string) {
   return [
-    "Create a polished isolated object from the annotated scene in image 1 and the user description.",
+    "Create a polished isolated object from the sketch on a transparent background in image 1 and the user description.",
     "The colored drawing marks identify the object or desired outline. Interpret those marks as instructions; remove all drawing ink from the result.",
-    hasCleanView ? "Image 2 shows the same scene without drawing marks for context." : "",
     "Preserve the requested colors, surface patterns and material appearance in the object; drawing ink color is only an annotation unless requested.",
     "Show only the requested object, complete and centered, in a clear three-quarter product view with visible depth and padding.",
-    "Remove the room, surrounding objects, text, UI, cast shadows and ground plane. Use a plain white background for clean extraction. Preserve requested holes, openings and geometric features.",
+    "Do not add a room, surrounding objects, text, UI, cast shadows or ground plane. Use a plain white background for clean extraction. Preserve requested holes, openings and geometric features.",
     "User request: " + description,
   ].filter(Boolean).join("\n");
 }
@@ -66,26 +65,27 @@ const redact = (message: string) => {
 export const run = internalAction({
   args: {
     id: v.id("assets"),
-    imageStorageId: v.id("_storage"),          // the view with the drawing on it
-    cleanStorageId: v.optional(v.id("_storage")), // the same view without ink
+    sketchStorageId: v.id("_storage"), // ink alone on transparency; no room pixels
     description: v.string(),
   },
-  handler: async (ctx, { id, imageStorageId, cleanStorageId, description }): Promise<Id<"assets">> => {
+  handler: async (ctx, { id, sketchStorageId, description }): Promise<Id<"assets">> => {
     const text = description.trim();
     const patch = (p: Record<string, unknown>) =>
       ctx.runMutation(internal.assets.update, { id, patch: p as any });
 
     try {
-      // Convex storage URLs are public, so fal can fetch the drawing directly.
-      const urls = (await Promise.all(
-        [imageStorageId, cleanStorageId].filter(Boolean).map((s) => ctx.storage.getUrl(s as Id<"_storage">)),
-      )).filter((u): u is string => Boolean(u));
-      if (!urls.length) throw new Error("The drawing is no longer in storage. Sketch it again.");
+      const sketch = await ctx.storage.get(sketchStorageId);
+      if (!sketch) throw new Error("The drawing is no longer in storage. Sketch it again.");
+      const sketchBytes = Buffer.from(await sketch.arrayBuffer());
+      if (!inspectPng(sketchBytes).validCutout) throw new Error("The sketch must contain visible strokes on a transparent background.");
+      // fal accepts base64 file inputs. Sending bytes also works when Convex storage
+      // is local and its URLs cannot be fetched by the remote image model.
+      const sketchDataUrl = `data:image/png;base64,${sketchBytes.toString("base64")}`;
 
       // Klein edit + BiRefNet cutout + alpha validation, in one call.
-      const result = await runSketchWorkflow("klein-9b", buildPrompt(text, urls.length > 1), {
+      const result = await runSketchWorkflow("klein-9b", buildPrompt(text), {
         env: process.env,
-        imageUrls: urls,
+        imageUrls: [sketchDataUrl],
         onProgress: (name) => { if (name === "backgroundRemoval") void patch({ stage: "cutout" }); },
       });
       if (result.status !== "ok") {

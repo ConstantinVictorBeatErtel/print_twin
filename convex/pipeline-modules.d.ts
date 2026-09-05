@@ -3,6 +3,12 @@
 // the parts convex/sketch.ts calls rather than duplicating the implementations.
 
 declare module "*/image-benchmark/providers.mjs" {
+  /** Require both visible pixels and fully transparent pixels in an input PNG. */
+  export function inspectPng(bytes: Uint8Array): {
+    validCutout: boolean;
+    transparentPercent: number;
+    visiblePercent: number;
+  };
   /** Klein edit -> BiRefNet cutout -> PNG alpha validation, as one call. */
   export function runWorkflow(
     id: "klein-9b" | "ideogram-instant" | "ideogram-turbo",
