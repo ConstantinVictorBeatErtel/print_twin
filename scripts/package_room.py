@@ -15,13 +15,21 @@ def write_json(archive, name, value):
     archive.writestr(name, json.dumps(value, indent=2) + '\n')
 
 
-def package(room, captures, output):
+def package(room, captures, output, cleanup=None):
     room, captures, output = Path(room).resolve(), Path(captures).resolve(), Path(output)
     manifest = json.loads((room/'manifest.json').read_text())
     job = json.loads((room/'job.json').read_text())
     if job['status'] != 'complete':
         raise ValueError('Only completed worlds can be packaged')
     output.mkdir(parents=True, exist_ok=True)
+    cleanup_record = json.loads(Path(cleanup).read_text()) if cleanup else None
+    if cleanup_record:
+        cleaned_hashes = {r['cleanedSha256'] for r in cleanup_record['records']}
+        if not all(i['sha256'] in cleaned_hashes for i in job['inputs']):
+            raise ValueError('Cleanup provenance does not match the world inputs')
+        # Generated tool paths are local implementation details, not portable provenance.
+        cleanup_record['records'] = [{k:v for k,v in r.items() if k != 'generatedPath'}
+                                     for r in cleanup_record['records']]
     provenance = {
         'worldId': manifest['worldId'], 'model': manifest['model'],
         'createdAt': job['createdAt'], 'completedAt': job['completedAt'],
@@ -29,7 +37,8 @@ def package(room, captures, output):
         'textPrompt': job['request']['world_prompt'].get('text_prompt'),
         'sourceFiles': [{'file': Path(i['path']).name, 'sha256': i['sha256'],
                          'bytes': i['bytes']} for i in job['inputs']],
-        'peopleRemovalApplied': False,
+        'peopleRemovalApplied': bool(cleanup_record),
+        'cleanup': cleanup_record,
         'creditsBefore': job.get('creditsBefore'), 'creditsAfter': job.get('creditsAfter'),
         'workflow': 'docs/ROOM_CREATION_WORKFLOW.md',
         'note': 'Portable provenance. Credentials and temporary provider URLs are omitted; raw provider responses remain local.',
@@ -46,7 +55,7 @@ def package(room, captures, output):
         write_json(archive, 'provenance.json', provenance)
         archive.write(room/'validation.json', 'validation.json')
         archive.writestr('README.txt',
-                        'Existing room, with people. All returned SPZ resolutions and collider included.\n'
+                        'All returned SPZ resolutions and collider included. See provenance.json for input/cleanup history.\n'
                         'Start with assets/splat-500k.spz for a laptop viewer. Full-resolution asset: assets/splat-full_res.spz.\n'
                         'manifest.json contains relative asset paths, checksums, and coordinate metadata.\n'
                         'Physical calibration, collider alignment, and browser rendering are unverified.\n'
@@ -54,18 +63,23 @@ def package(room, captures, output):
     capture_zip = output/'hackathon-prepared-captures.zip'
     inventory = []
     with zipfile.ZipFile(capture_zip, 'w', compression=zipfile.ZIP_STORED) as archive:
-        for path in sorted((captures/'prepared').iterdir()):
+        paths = sorted((captures/'prepared').iterdir())
+        if cleanup_record:
+            paths += sorted((captures/'cleaned').iterdir())
+        for path in paths:
             if path.suffix.lower() not in {'.jpg','.jpeg','.png','.webp','.mp4'}:
                 continue
-            name = 'prepared/' + path.name
+            name = str(path.relative_to(captures))
             archive.write(path, name)
             inventory.append({'file': name, 'bytes': path.stat().st_size, 'sha256': sha256(path)})
         write_json(archive, 'inventory.json', inventory)
+        if cleanup_record:
+            write_json(archive, 'cleanup-generation.json', cleanup_record)
         archive.writestr('README.txt',
-                        'Prepared input copies: ten JPEG photos and three SDR MP4 videos for this first capture set.\n'
-                        'The generated world used prepared/IMG_6872.mp4. Other files are alternate inputs.\n'
+                        f'Capture archive: {len(inventory)} media files. See inventory.json for paths and hashes.\n'
+                        'World inputs: ' + ', '.join(i['file'] for i in provenance['sourceFiles']) + '\n'
                         'Original HEIC/MOV files are preserved locally. These prepared copies omit audio/device metadata.\n'
-                        'People have not been removed from these captures.\n')
+                        'Prepared copies can contain people. When included, cleaned/ contains edited inputs; see cleanup-generation.json.\n')
     for path in (world_zip, capture_zip):
         with zipfile.ZipFile(path) as archive:
             if archive.testzip() is not None:
@@ -79,5 +93,6 @@ if __name__ == '__main__':
     parser.add_argument('--room', default='data/worlds/hackathon-room-video-01')
     parser.add_argument('--captures', default='data/captures')
     parser.add_argument('--out', default='data/releases/room-capture-2026-09-05')
+    parser.add_argument('--cleanup', help='Optional cleanup-generation.json matching all submitted inputs')
     args = parser.parse_args()
-    print(json.dumps(package(args.room,args.captures,args.out),indent=2))
+    print(json.dumps(package(args.room,args.captures,args.out,args.cleanup),indent=2))

@@ -2,13 +2,13 @@
 
 ## Current decision
 
-User update, September 5, 2026: future room versions should contain **no people**. Preserve the room architecture, furniture, and layout. The user explicitly asked **not to generate a new world yet**. Only documentation and distribution of the existing room are authorized in this update; no cleanup image or replacement world has been generated.
+Latest user update, September 5, 2026: the user supplied a new 25.19-second stage-view video and five photos (IMG_6885–IMG_6890) and explicitly requested proceeding if the assets were suitable. Inspection accepted the set and supersedes the earlier generation hold. Five cleaned stills were created with built-in imagegen and submitted in multi-image reconstruction mode. The new **demo-stage** world `82f39764-5224-4574-8328-8a747f42ed3e` completed successfully; no people are visible in its panorama/thumbnail. See [stage capture and generation record](STAGE_WORLD_RESULT.md).
 
-The current room remains `b7fc3a55-8fc1-4ef0-8ac8-705c3abe7d5a`. It contains people. The process below distinguishes the working capture pipeline from the planned cleanup step.
+The original room `b7fc3a55-8fc1-4ef0-8ac8-705c3abe7d5a` remains available and contains people. Its files are preserved separately from the stage version.
 
 ## Where to record
 
-For this demo, stand in an open aisle beside the chosen placement table, far enough back to see its whole top, edges, and adjacent floor. Prefer that useful viewpoint over the room's exact geometric center. Do not record while seated behind laptops or people. If the center provides a clear view of the target area, it is a good choice for broad coverage.
+The user has now chosen the demo stage as the capture viewpoint. Future refinements should use that same position and face toward the room's dark far alcove and yellow pendant light. Keep the stage edge, floor, tables, and columns visible. The earlier aisle/table guidance applies only if deliberately choosing a different scene origin; do not move the capture to the center for this stage version.
 
 Hold the phone level at chest/eye height, preferably landscape. Keep the same lens, zoom, exposure, and focus throughout. Rotate slowly in place through 180–360 degrees during one continuous 20–30 second shot, with no cuts. Include the floor and table surfaces as well as the ceiling. Wait for the immediate area to be empty if possible. A clean partial sweep is more useful than a fast, blurred full rotation.
 
@@ -52,9 +52,9 @@ npm run world -- generate \
   --dry-run
 ```
 
-`--dry-run` performs local validation only. A text request for an unoccupied room is guidance, **not a reliable people-removal step**. Do not remove `--dry-run` while generation is on hold. Later generations are stochastic and are not guaranteed to reproduce identical geometry from the same files.
+`--dry-run` performs local validation only. A text request for an unoccupied room is guidance, **not a reliable people-removal step**. The stage run used visually reviewed, edited photos before generation. Later generations are stochastic and are not guaranteed to reproduce identical geometry from the same files.
 
-## Planned people removal
+## People removal
 
 Best input: a clean capture in which the important table/floor surfaces are actually visible. Existing captures are sufficient for a visual cleanup attempt, but covered surfaces must be inferred when no reference reveals them.
 
@@ -66,7 +66,7 @@ Review for remaining faces/limbs, floating bags/clothing, broken chair legs, alt
 
 For a fresh multi-image set, any edits must remain consistent across overlapping views. Review all views together before submitting them. Independent edits can disagree about hidden furniture; clean capture is preferable when possible.
 
-This cleanup stage is **documented, not implemented or run**. The current CLI treats single images as non-panoramas, so a cleaned 360-degree panorama must use Marble's supported editing workflow or a future explicitly implemented panorama input mode. Do not pass it to the current ordinary-photo command. No automated cleanup or later generation has been scheduled.
+The stage capture's cleanup was run as five built-in imagegen photo edits, one target photo per call with the other four originals as references. All outputs were inspected; no people were visible, but some desktop clutter was also simplified. Exact prompts, source/output hashes, and limitations are stored in `data/captures-stage/cleanup-generation.json` and included in the stage archive. Cleanup is currently an agent-orchestrated step, not an automated CLI feature. The current CLI treats single images as non-panoramas, so a cleaned 360-degree panorama must use Marble's supported editing workflow or a future explicitly implemented panorama input mode. Do not pass it to the current ordinary-photo command.
 
 ## Download and provenance
 
