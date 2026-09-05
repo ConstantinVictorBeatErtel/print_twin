@@ -81,6 +81,12 @@ export function cameraForAnchor(anchor: DrawingAnchor) {
   camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
   camera.projectionMatrix.fromArray(anchor.projection);
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+  // The matrices are restored wholesale, not derived from position/quaternion. A parentless
+  // camera with matrixWorldAutoUpdate on gets updateMatrixWorld() called by
+  // WebGLRenderer.render(), which would recompose matrixWorld from those untouched defaults
+  // and silently put the camera back at the origin. Harmless while it is only read, fatal
+  // once anything renders through it (SketchSolver does).
+  camera.matrixWorldAutoUpdate = false;
   return camera;
 }
 

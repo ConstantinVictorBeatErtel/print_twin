@@ -97,3 +97,15 @@ test("the drawn rectangle unprojects back to a quad that still covers it on scre
   const base = new T.Vector3().fromArray(anchor.position);
   for (const corner of quad) assert.ok(corner.distanceTo(base) < 5);
 });
+
+test("the restored camera survives the updateMatrixWorld that rendering through it triggers", () => {
+  const { camera, scene } = room();
+  const shot = cameraForAnchor(anchorDrawing(outline, camera, scene));
+  const before = shot.matrixWorld.toArray();
+  // WebGLRenderer.render() does exactly this to a parentless camera. Without
+  // matrixWorldAutoUpdate off it recomposes the matrix from untouched defaults and the
+  // camera silently jumps to the origin.
+  shot.updateMatrixWorld();
+  assert.deepEqual(shot.matrixWorld.toArray(), before);
+  assert.ok(before.slice(12, 15).some((n) => Math.abs(n) > 1e-6), "the capture camera was not at the origin");
+});

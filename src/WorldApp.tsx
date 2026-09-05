@@ -471,7 +471,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         <CrosshairPick enabled={!armed && !drawing && mouseLocked}
           onHit={(id) => { const hit = placements.find((p) => p._id === id); if (hit) editPlacement(hit); }} />
         {job?.strokeImage && jobAsset && !jobPlaced &&
-          <SketchGhost anchor={job.anchor} image={job.strokeImage} pulse={generating} />}
+          <SketchGhost anchor={job.anchor} image={job.strokeImage} />}
         {active && !armed && <mesh position={active.position as [number, number, number]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.035, 0.05, 32]} /><meshBasicMaterial color="#98f5ba" depthTest={false} transparent opacity={0.8} />
         </mesh>}

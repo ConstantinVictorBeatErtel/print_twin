@@ -73,8 +73,15 @@ function solve(gl: THREE.WebGLRenderer, model: THREE.Object3D, anchor: DrawingAn
       const atlasWidth = columns * width, atlasHeight = rows * height;
       const target = new THREE.WebGLRenderTarget(atlasWidth, atlasHeight);
 
+      // Every piece of renderer state this borrows has to go back exactly as it was. The
+      // viewport especially: WebGLRenderer.render() does not reset it and R3F only sets it on
+      // resize, so leaving it on the last tile makes the whole app render into a small corner
+      // and the rest of the canvas stay black until the window is resized.
       const previousClear = gl.getClearColor(new THREE.Color());
       const previousAlpha = gl.getClearAlpha();
+      const previousViewport = gl.getViewport(new THREE.Vector4());
+      const previousScissor = gl.getScissor(new THREE.Vector4());
+      const previousScissorTest = gl.getScissorTest();
       gl.setClearColor(0x000000, 1);
       gl.setRenderTarget(target);
       // The scissor confines each tile's autoClear to its own cell, so one target holds them all.
@@ -94,8 +101,10 @@ function solve(gl: THREE.WebGLRenderer, model: THREE.Object3D, anchor: DrawingAn
         gl.readRenderTargetPixels(target, 0, 0, atlasWidth, atlasHeight, pixels);
         return yaws.map((_, i) => tile(pixels, atlasWidth, i, columns, rows, width, height));
       } finally {
-        gl.setScissorTest(false);
         gl.setRenderTarget(null);
+        gl.setViewport(previousViewport);
+        gl.setScissor(previousScissor);
+        gl.setScissorTest(previousScissorTest);
         gl.setClearColor(previousClear, previousAlpha);
         target.dispose();
       }

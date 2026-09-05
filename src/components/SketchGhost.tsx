@@ -5,14 +5,12 @@
 // The anchor already stores the capture camera's matrices, so the drawn rectangle can be
 // unprojected back to the depth its base was anchored at (drawingQuad) — the strokes then sit
 // in the world where you drew them, with real parallax as you walk around them.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
 import { drawingQuad, type DrawingAnchor } from "../lib/drawingPlacement";
 
-export function SketchGhost({ anchor, image, pulse = true }: { anchor: DrawingAnchor; image: string; pulse?: boolean }) {
+export function SketchGhost({ anchor, image }: { anchor: DrawingAnchor; image: string }) {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
-  const material = useRef<THREE.MeshBasicMaterial>(null);
 
   useEffect(() => {
     let alive = true;
@@ -36,16 +34,13 @@ export function SketchGhost({ anchor, image, pulse = true }: { anchor: DrawingAn
   }, [anchor]);
   useEffect(() => () => geometry.dispose(), [geometry]);
 
-  // A slow breath, so it reads as "still working" rather than as a placed object.
-  useFrame((state) => {
-    if (material.current) {
-      material.current.opacity = pulse ? 0.6 + 0.25 * Math.sin(state.clock.getElapsedTime() * 2.2) : 0.35;
-    }
-  });
-
+  // Drawn at full strength: the ink is the only marker of where the object is going, and it
+  // has to stay readable against a bright splat from across the room. `transparent` still
+  // matters — the PNG is ink on transparency, so the alpha channel is doing the cutting out,
+  // not the opacity. `depthWrite` stays off so the quad never occludes what is behind it.
   if (!texture) return null;
   return <mesh geometry={geometry}>
-    <meshBasicMaterial ref={material} map={texture} transparent depthWrite={false}
+    <meshBasicMaterial map={texture} transparent opacity={1} depthWrite={false}
       side={THREE.DoubleSide} toneMapped={false} />
   </mesh>;
 }
