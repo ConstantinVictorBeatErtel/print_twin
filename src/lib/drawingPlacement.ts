@@ -1,6 +1,5 @@
 import { Box3, Euler, Matrix4, PerspectiveCamera, Quaternion, Raycaster, Vector2, Vector3, type Object3D } from "three";
 import { orientTo, pickSurface, type PickSource } from "./surfacePick.ts";
-import type { Placement } from "./localScene.ts";
 
 export type Point = { x: number; y: number };
 export type DrawingBounds = { left: number; top: number; right: number; bottom: number };
@@ -8,6 +7,8 @@ export type DrawingAnchor = {
   position: number[]; rotation: number[]; source: PickSource;
   bounds: DrawingBounds; cameraWorld: number[]; projection: number[];
 };
+/** The size the sketch implies, plus the anchor pose it was measured against. */
+export type DrawingFit = { position: number[]; rotation: number[]; targetSize: number; scale: number };
 
 export function drawingBounds(strokes: { points: Point[] }[]): DrawingBounds | null {
   const points = strokes.flatMap((s) => s.points);
@@ -45,7 +46,7 @@ export function cameraForAnchor(anchor: DrawingAnchor) {
 
 // Match the generated model's projected footprint, accounting for aspect ratio, camera
 // tilt and model depth. The original contact point stays fixed even if the user walks away.
-export function fitDrawing(model: Object3D, anchor: DrawingAnchor): Pick<Placement, "position" | "rotation" | "targetSize" | "scale"> {
+export function fitDrawing(model: Object3D, anchor: DrawingAnchor): DrawingFit {
   const box = new Box3().setFromObject(model);
   if (box.isEmpty()) throw new Error("The generated model has no visible geometry.");
   const size = box.getSize(new Vector3());

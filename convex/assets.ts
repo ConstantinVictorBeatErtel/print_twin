@@ -1,7 +1,7 @@
 // Tripo v3: generate object → poll → download GLB into Convex storage (URL dies in 5 min).
 import { v } from "convex/values";
-import { action, internalMutation, mutation, query } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 
 const BASE = "https://openapi.tripo3d.ai/v3";
@@ -16,14 +16,22 @@ export const list = query({
   handler: async (ctx) => {
     const assets = await ctx.db.query("assets").order("desc").collect();
     return Promise.all(assets.map(async (a) => ({
-      ...a, glbUrl: a.glbStorageId ? await ctx.storage.getUrl(a.glbStorageId) : null,
+      ...a,
+      glbUrl: a.glbStorageId ? await ctx.storage.getUrl(a.glbStorageId) : null,
+      cutoutUrl: a.cutoutStorageId ? await ctx.storage.getUrl(a.cutoutStorageId) : null,
     })));
   },
 });
 
+/** Resume needs the saved Tripo task ID; actions cannot read the database directly. */
+export const byId = internalQuery({
+  args: { id: v.id("assets") },
+  handler: (ctx, { id }) => ctx.db.get(id),
+});
+
 export const create = internalMutation({
-  args: { prompt: v.string(), model: v.string() },
-  handler: (ctx, args) => ctx.db.insert("assets", { ...args, status: "generating" }),
+  args: { prompt: v.string(), model: v.string(), description: v.optional(v.string()), stage: v.optional(v.string()) },
+  handler: (ctx, args) => ctx.db.insert("assets", { ...args, stage: args.stage as any, status: "generating" }),
 });
 
 export const update = internalMutation({
@@ -35,6 +43,10 @@ export const update = internalMutation({
       glbStorageId: v.optional(v.id("_storage")),
       thumbnailUrl: v.optional(v.string()),
       error: v.optional(v.string()),
+      stage: v.optional(v.union(v.literal("image"), v.literal("cutout"), v.literal("mesh"), v.literal("done"))),
+      progress: v.optional(v.number()),
+      cutoutStorageId: v.optional(v.id("_storage")),
+      hasSurfaceColor: v.optional(v.boolean()),
     }),
   },
   handler: (ctx, { id, patch }) => ctx.db.patch(id, patch),
@@ -96,13 +108,45 @@ export const generateFromImage = action({
   },
 });
 
-/** Drawing in Convex storage -> 3D. Storage URLs are public, so Tripo can fetch them. */
-export const generateFromDrawing = action({
-  args: { storageId: v.id("_storage"), model: v.optional(v.string()) },
-  handler: async (ctx, { storageId, model }): Promise<Id<"assets">> => {
-    const url = await ctx.storage.getUrl(storageId);
-    if (!url) throw new Error("drawing not found in storage");
-    return await ctx.runAction(api.assets.generateFromImage, { imageUrlOrToken: url, model });
+// ---- sketch -> object (fal + Tripo colour pipeline lives in sketch.ts) ----
+
+/**
+ * Start a sketch generation and hand back the asset id immediately, so the viewer can
+ * show progress from the first second. The paid work runs in a scheduled Node action;
+ * the client never holds a minute-long request open, and a reload reconnects by id.
+ */
+export const startSketch = mutation({
+  args: {
+    imageStorageId: v.id("_storage"),
+    cleanStorageId: v.optional(v.id("_storage")),
+    description: v.string(),
+  },
+  handler: async (ctx, { imageStorageId, cleanStorageId, description }): Promise<Id<"assets">> => {
+    const text = description.trim();
+    if (!text) throw new Error("Describe what you drew before generating.");
+    if (text.length > 8000) throw new Error("Keep the description under 8,000 characters.");
+    // Fail before creating a row: an unconfigured deployment should say so plainly
+    // rather than leaving a failed object in everyone's library.
+    for (const key of ["FAL_KEY", "TRIPO_API_KEY"]) {
+      if (!process.env[key]?.trim()) throw new Error(`${key} is not set on this deployment. Run \`npx convex env set ${key} <key>\`.`);
+    }
+    const id = await ctx.db.insert("assets", {
+      prompt: text, description: text, model: "P1-20260311", status: "generating", stage: "image",
+    });
+    await ctx.scheduler.runAfter(0, internal.sketch.run, { id, imageStorageId, cleanStorageId, description: text });
+    return id;
+  },
+});
+
+/** Retry the download/colour check for a Tripo task that was already paid for. */
+export const resumeSketch = mutation({
+  args: { assetId: v.id("assets") },
+  handler: async (ctx, { assetId }) => {
+    const asset = await ctx.db.get(assetId);
+    if (!asset) throw new Error("That object no longer exists.");
+    if (!asset.taskId) throw new Error("This object has no saved Tripo task to resume.");
+    await ctx.db.patch(assetId, { status: "generating", stage: "mesh", error: undefined });
+    await ctx.scheduler.runAfter(0, internal.sketch.resumeRun, { assetId });
   },
 });
 
@@ -119,9 +163,30 @@ export const placementsInRoom = query({
 });
 
 export const place = mutation({
-  args: { room: v.string(), assetId: v.id("assets"), position: v.array(v.number()), rotation: v.optional(v.array(v.number())), scale: v.optional(v.number()) },
-  handler: (ctx, { room, assetId, position, rotation = [0, 0, 0], scale = 1 }) =>
-    ctx.db.insert("placements", { room, assetId, position, rotation, scale }),
+  args: { room: v.string(), assetId: v.id("assets"), position: v.array(v.number()), rotation: v.optional(v.array(v.number())), scale: v.optional(v.number()), targetSize: v.optional(v.number()) },
+  handler: (ctx, { room, assetId, position, rotation = [0, 0, 0], scale = 1, targetSize }) =>
+    ctx.db.insert("placements", { room, assetId, position, rotation, scale, targetSize }),
+});
+
+/** Undo for a placement, and the Remove button. Deleting a placement never touches its asset. */
+export const removePlacement = mutation({
+  args: { id: v.id("placements") },
+  handler: async (ctx, { id }) => { await ctx.db.delete("placements", id); },
+});
+
+/** Move / resize / rotate an object already in the room. */
+export const updatePlacement = mutation({
+  args: {
+    id: v.id("placements"),
+    position: v.optional(v.array(v.number())),
+    rotation: v.optional(v.array(v.number())),
+    scale: v.optional(v.number()),
+    targetSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { id, ...patch }) => {
+    const next = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    if (Object.keys(next).length) await ctx.db.patch(id, next);
+  },
 });
 
 /** Remove every object placed in a room. Irreversible — placements have no undo. */

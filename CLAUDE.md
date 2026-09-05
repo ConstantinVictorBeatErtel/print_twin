@@ -32,26 +32,58 @@ npm run dev                        # convex dev + vite
 Multiplayer test: open two tabs at `http://localhost:5173/?room=test`, click "join multiplayer" in both.
 
 ## Conventions
-- Coordinates: Marble splats/colliders are OpenCV (+y down) → `scale=[s,-s,-s]` (done in `SplatWorld.tsx`). Metric scale via `metricScale`/`groundOffset`.
+- Coordinates: Marble splats/colliders are OpenCV (+y down) → `scale=[s,-s,-s]` (via `worldTransform` in `SplatWorld.tsx`). Metric scale via `metricScale`/`groundOffset`, read off the world document — never hardcode them.
 - GLB loading: always through `gltfLoader` in `src/components/Asset.tsx` (Draco + meshopt decoders attached).
 - Multiplayer: one doc per player, ≤5–10 Hz mutations, lerp remote players. Never send per-frame mutations.
 - Generation is slow (Tripo 10–120s, Marble 1–5 min): kick it off early, show status in UI, never block the render loop.
 - Keep the demo path (`src/App.tsx`) working at all times; put experiments behind `?feature=` flags.
 
 ## Capture integration
-`src/App.tsx` hosts the Galatea capture entry and three-second demo transition.
-`src/lib/ConvexProjectClient.ts` bridges saved CLI manifests and `readWorldZip`
-results into Convex storage via `api.worlds.importUploaded`. Demo entry reuses the
-saved stage world, with indexed provider-world-ID lookup and duplicate prevention;
-it does not generate from the selected capture. `src/WorldApp.tsx` retains the
-original viewer, placement and multiplayer. The URL's `world` is the Convex ID and
-default room ID; legacy `job` URLs import through the same bridge.
+`src/App.tsx` hosts the Galatea capture entry and three-second demo transition, then
+hands off to `src/WorldApp.tsx` — the first-person room viewer. `src/lib/ConvexProjectClient.ts`
+bridges saved CLI manifests and `readWorldZip` results into Convex storage via
+`api.worlds.importUploaded`. Demo entry reuses the saved stage world, with indexed
+provider-world-ID lookup and duplicate prevention; it does not generate from the selected
+capture. The URL's `world` is the Convex ID and default room ID; legacy `job` URLs import
+through the same bridge.
 
-Root `vite.config.ts` serves only saved `/world-assets/` files. `npm run web` and
-the compatibility commands in `web/` run this root app. `web/src/` is legacy code,
-not a second active viewer or CLI-driven dev server. The original sidebar's ZIP
-upload still imports the actual archive. A fresh backend needs the saved local
-assets or a ZIP import; neither backend data nor room binaries are in Git.
+Root `vite.config.ts` serves only saved `/world-assets/` files. `web/src/` is legacy code,
+not a second active viewer. A fresh backend needs the saved local assets or a ZIP import;
+neither backend data nor room binaries are in Git.
+
+## The room viewer (`src/WorldApp.tsx`)
+Navigation is first-person (`LocalWalk.tsx`: pointer lock, WASD/arrows, Q/E, Shift, H to
+release) — there is no OrbitControls. Room geometry, the object library, placements and
+players all come from Convex; nothing is stored in IndexedDB.
+
+- Placement: `src/lib/surfacePick.ts` raycasts the Marble collider for a real triangle
+  normal (inverse-transpose normal matrix, flipped toward the camera), falls back to two
+  probe rays against the splat, and `orientTo` stands the object's +Y on that normal.
+  `plane` is disabled — a miss places nothing rather than inventing a depth. Do not
+  "simplify" this; it is what makes objects land on tables.
+- Sizes: `fit.ts` normalizes every GLB so its longest dimension is `targetSize` metres and
+  its bottom-centre sits at the anchor. `PlacementGhost` and `Asset` run identical maths,
+  so a committed object does not jump.
+- Sketching: `DrawingLayer` freezes the frame, `drawingPlacement.ts` anchors the drawing's
+  bottom-centre to a surface and stores the camera matrices; `fitDrawing` uses them to
+  estimate a size. The anchor's *position* is deliberately discarded — you still click
+  where the object goes.
+- Undo/redo is an inverse-operation stack (`src/lib/placementHistory.ts`), not array
+  snapshots: placements are shared, so replaying a snapshot would revert other players.
+
+## Sketch -> object pipeline
+`assets.startSketch` (mutation) validates keys, inserts the row, returns its id and
+schedules `internal.sketch.run` (`"use node"`). That action reuses the CLI modules
+verbatim — `scripts/image-benchmark/providers.mjs` for fal Klein + BiRefNet,
+`scripts/glb-assets.mjs` for `inspectGlb`/`modelArtifact` — plus `convex/tripo.ts`, which
+is a copy of the four Tripo helpers from `scripts/image-to-stl.mjs` (copied, not imported,
+to keep three.js out of the Convex bundle). `convex/pipeline-modules.d.ts` types both JS
+modules. Progress is patched onto the asset row, so the client watches it with `useQuery`
+instead of polling. STL export runs in the browser (`src/lib/stlExport.ts`).
+
+Needs `FAL_KEY` and `TRIPO_API_KEY` in the Convex environment. The Tripo endpoint here is
+`api.tripo3d.ai/v2/openapi`, not the `openapi.tripo3d.ai/v3` one used by the older
+`assets.generateFromText`/`generateFromImage` actions.
 
 ## Where to extend
 - NPC/agent: `npm i @convex-dev/agent ai @ai-sdk/anthropic`, enable in `convex/convex.config.ts`, add `convex/npc.ts`.

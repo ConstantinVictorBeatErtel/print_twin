@@ -48,7 +48,7 @@ Sources: [Three.js color management](https://threejs.org/manual/en/color-managem
 
 ## Commands and compatibility
 
-- Placement viewer: `npm run dev:local`, then `http://127.0.0.1:5174/local.html`.
+- Room viewer: `npm run dev`, then `http://localhost:5173`.
 - CLI color generation: `npm run image:glb -- image.png --out tripo-output/new-color-object`.
 - Explicit fastest geometry-only mode: add `--geometry-only`.
 - `image:glb` produces a color GLB and geometry-only STL.
@@ -59,7 +59,7 @@ The previous 13.24-second live result was a geometry-only baseline, not a color-
 
 ## Verification
 
-The original workspace color verification passed 55 tests and both Vite builds. This standalone branch carries the relevant generation/placement tests plus local API settings tests; run `npm test` and `npm run build:local`. Checks cover default color flags and explicit geometry mode, finished-versus-base model selection, rejection of colorless output, self-contained resources, binary GLB preservation through STL conversion, early GLB availability, export failure recovery, scene placement and persistence validation.
+The original workspace color verification passed 55 tests and both Vite builds. The pipeline now runs as a Convex action (`convex/sketch.ts`) rather than a local Node server; run `npm test` and `npm run build`. Checks cover default color flags and explicit geometry mode, finished-versus-base model selection, rejection of colorless output, self-contained resources, binary GLB preservation through STL conversion, early GLB availability, export failure recovery, scene placement and persistence validation.
 
 The live three-color ceramic object completed in **71.5 seconds**: image generation 15.86 s, model plus texture generation 55.60 s, STL conversion 0.013 s. These are observed timings for one object, not a controlled comparison or latency guarantee. The final `model` artifact is a 404,796-byte GLB with one embedded JPEG texture, one connected base-color material, and 4,692 triangles. Its blue, yellow and red colors were visually verified in the room, after a full reload, and in the standalone GLB preview. The geometry-only STL was also successfully exported, without changing the canonical GLB bytes.
 

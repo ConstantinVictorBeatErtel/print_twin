@@ -1,39 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { emptyHistory, sceneHistory, validPlacement } from "../src/lib/localScene.ts";
 import { validateGlb } from "../src/lib/localModel.ts";
 import { fitToTarget } from "../src/lib/fit.ts";
 import { pickSurface, orientTo } from "../src/lib/surfacePick.ts";
-
-const placement = { id: "one", modelId: "plantpot", position: [1, 2, 3], rotation: [0, 0, 0], scale: 1, targetSize: 0.3 };
-
-test("placement move and removal undo/redo preserve exact transforms", () => {
-  let state = sceneHistory(emptyHistory, { type: "set", placements: [placement] });
-  const moved = { ...placement, position: [3, 4, 5], scale: 2 };
-  state = sceneHistory(state, { type: "set", placements: [moved] });
-  state = sceneHistory(state, { type: "set", placements: [] });
-  state = sceneHistory(state, { type: "undo" });
-  assert.deepEqual(state.present, [moved]);
-  state = sceneHistory(state, { type: "undo" });
-  assert.deepEqual(state.present, [placement]);
-  state = sceneHistory(state, { type: "redo" });
-  assert.deepEqual(state.present, [moved]);
-  state = sceneHistory(state, { type: "set", placements: [placement] });
-  assert.equal(state.future.length, 0);
-});
-
-test("restoring a scene does not create an undo step that clears saved objects", () => {
-  const restored = sceneHistory(emptyHistory, { type: "restore", placements: [placement] });
-  assert.equal(sceneHistory(restored, { type: "undo" }), restored);
-});
-
-test("saved placements reject invalid positions and scales", () => {
-  assert.ok(validPlacement(placement));
-  for (const patch of [{ position: [1, 2] }, { rotation: [0, NaN, 0] }, { scale: 0 }, { scale: Infinity }, { targetSize: -1 }]) {
-    assert.equal(validPlacement({ ...placement, ...patch }), false);
-  }
-});
 
 test("model normalization anchors its bottom center at the placement point", () => {
   const model = new THREE.Group();

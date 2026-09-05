@@ -1,17 +1,22 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { SplatMesh } from "@sparkjsdev/spark";
 import { Vector3 } from "three";
 
 const UP = new Vector3(0, 1, 0);
+// Metres per second. The room now carries Marble's metric scale, so these are real
+// walking speeds rather than the arbitrary units the standalone viewer used.
+const WALK_SPEED = 1.6;
+const SPRINT_MULTIPLIER = 3;
+// Standing eye height. The capture origin is on the floor, not at head level.
+const SPAWN: [number, number, number] = [0, 1.6, 0];
 
 export type MouseLook = { capture: () => void; release: () => void };
 
-export function Walk({ reset, onStatus, paused = false, enabled = true, mouseLookRef, onLockChange, onError }: {
-  reset: number; onStatus: (s: string) => void; paused?: boolean; enabled?: boolean;
+export function Walk({ reset, paused = false, enabled = true, mouseLookRef, onLockChange, onError }: {
+  reset: number; paused?: boolean; enabled?: boolean;
   mouseLookRef: MutableRefObject<MouseLook | null>; onLockChange: (locked: boolean) => void; onError: (message: string) => void;
 }) {
-  const { camera, gl, scene } = useThree();
+  const { camera, gl } = useThree();
   const [keys] = useState(() => new Set<string>());
   const [direction] = useState(() => new Vector3());
   const settings = useRef({ paused, enabled, onLockChange, onError });
@@ -20,7 +25,7 @@ export function Walk({ reset, onStatus, paused = false, enabled = true, mouseLoo
     if (paused || !enabled) { mouseLookRef.current?.release(); keys.clear(); }
   }, [paused, enabled, mouseLookRef, keys]);
   useEffect(() => {
-    camera.position.set(0, 0, 0);
+    camera.position.set(...SPAWN);
     camera.rotation.set(0, 0, 0, "YXZ");
   }, [camera, reset]);
   useEffect(() => {
@@ -77,27 +82,14 @@ export function Walk({ reset, onStatus, paused = false, enabled = true, mouseLoo
     window.addEventListener("keyup", (e) => { keys.delete(e.code); }, options);
     window.addEventListener("blur", release, options);
     document.addEventListener("visibilitychange", release, options);
-    let observed: SplatMesh | undefined;
-    const timer = window.setInterval(() => {
-      scene.traverse((node) => {
-        if (!(node instanceof SplatMesh) || node === observed) return;
-        observed = node;
-        clearInterval(timer);
-        node.initialized.then(() => {
-          if (!abort.signal.aborted) onStatus("Ready · 2,400,000 splats · full resolution");
-        }).catch((error) => {
-          if (!abort.signal.aborted) onStatus(`Could not load room: ${String(error)}`);
-        });
-      });
-    }, 250);
-    return () => { abort.abort(); release(); mouseLookRef.current = null; clearInterval(timer); };
-  }, [camera, gl, scene, keys, onStatus, mouseLookRef]);
+    return () => { abort.abort(); release(); mouseLookRef.current = null; };
+  }, [camera, gl, keys, mouseLookRef]);
   useFrame((_, delta) => {
     if (!enabled) return;
     const held = (a: string, b?: string) => Number(keys.has(a) || Boolean(b && keys.has(b)));
     direction.set(held("KeyD", "ArrowRight") - held("KeyA", "ArrowLeft"), held("KeyE") - held("KeyQ"), held("KeyS", "ArrowDown") - held("KeyW", "ArrowUp"));
     direction.normalize().applyAxisAngle(UP, camera.rotation.y);
-    camera.position.addScaledVector(direction, Math.min(delta, 0.05) * (held("ShiftLeft", "ShiftRight") ? 3 : 1));
+    camera.position.addScaledVector(direction, Math.min(delta, 0.05) * WALK_SPEED * (held("ShiftLeft", "ShiftRight") ? SPRINT_MULTIPLIER : 1));
   });
   return null;
 }

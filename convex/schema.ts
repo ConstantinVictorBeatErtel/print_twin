@@ -29,6 +29,13 @@ export default defineSchema({
     glbStorageId: v.optional(v.id("_storage")),
     thumbnailUrl: v.optional(v.string()),
     error: v.optional(v.string()),
+    // Sketch pipeline: the client watches these instead of polling a job endpoint.
+    description: v.optional(v.string()),        // what the user typed under their drawing
+    stage: v.optional(v.union(                  // drives the Image -> Cutout -> 3D card
+      v.literal("image"), v.literal("cutout"), v.literal("mesh"), v.literal("done"))),
+    progress: v.optional(v.number()),           // Tripo task progress, 0-100
+    cutoutStorageId: v.optional(v.id("_storage")), // the isolated object PNG fed to Tripo
+    hasSurfaceColor: v.optional(v.boolean()),   // inspectGlb verdict, not a promise of fidelity
   }),
 
   // Placed instances of assets inside a room (position/rotation/scale).
@@ -38,6 +45,9 @@ export default defineSchema({
     position: v.array(v.number()),
     rotation: v.array(v.number()),
     scale: v.number(),
+    // Longest dimension in metres, from the sketch size estimate (see fitDrawing).
+    // Without it a reload re-normalizes every object to the 0.5 m default.
+    targetSize: v.optional(v.number()),
   }).index("by_room", ["room"]),
 
   // Multiplayer: one doc per player, ~5 Hz updates, lerp on client.
