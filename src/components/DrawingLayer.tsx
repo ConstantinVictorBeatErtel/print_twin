@@ -4,7 +4,9 @@ import { PerspectiveCamera } from "three";
 import { anchorDrawing, drawingBounds, type DrawingAnchor, type DrawingBounds, type Point } from "../lib/drawingPlacement";
 
 export type DrawingCapture = { image: HTMLCanvasElement; anchor: (bounds: DrawingBounds) => DrawingAnchor };
-export type DrawingRequest = { image: string; cleanImage: string; description: string; anchor: DrawingAnchor };
+// `strokeImage` is the ink alone on transparency, cropped to `anchor.bounds`, so it can be
+// hung back in the room on the quad those same bounds unproject to (see SketchGhost).
+export type DrawingRequest = { image: string; cleanImage: string; strokeImage: string; description: string; anchor: DrawingAnchor };
 export function DrawingBridge({ captureRef }: { captureRef: React.MutableRefObject<(() => DrawingCapture) | null> }) {
   const { gl, camera, scene } = useThree();
   useEffect(() => {
@@ -34,23 +36,40 @@ export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMess
   const [error, setError] = useState("");
   const [anchor, setAnchor] = useState<DrawingAnchor | null>(null);
   const bounds = drawingBounds(strokes.current);
+  /** Shared by the on-screen canvas and the cropped cutout, so the two never drift. */
+  function paintStrokes(ctx: CanvasRenderingContext2D, width: number, height: number) {
+    ctx.strokeStyle = ctx.fillStyle = INK;
+    ctx.lineCap = ctx.lineJoin = "round";
+    for (const s of strokes.current) {
+      ctx.lineWidth = s.width * width;
+      ctx.beginPath();
+      const first = s.points[0];
+      ctx.moveTo(first.x * width, first.y * height);
+      for (const p of s.points) ctx.lineTo(p.x * width, p.y * height);
+      if (s.points.length === 1) { ctx.arc(first.x * width, first.y * height, ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fill(); }
+      else ctx.stroke();
+    }
+  }
   function render() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(capture.image, 0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = ctx.fillStyle = INK;
-    ctx.lineCap = ctx.lineJoin = "round";
-    for (const s of strokes.current) {
-      ctx.lineWidth = s.width * canvas.width;
-      ctx.beginPath();
-      const first = s.points[0];
-      ctx.moveTo(first.x * canvas.width, first.y * canvas.height);
-      for (const p of s.points) ctx.lineTo(p.x * canvas.width, p.y * canvas.height);
-      if (s.points.length === 1) { ctx.arc(first.x * canvas.width, first.y * canvas.height, ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fill(); }
-      else ctx.stroke();
-    }
+    paintStrokes(ctx, canvas.width, canvas.height);
+  }
+  /** The ink alone, on transparency, cropped to exactly the bounds rectangle. */
+  function strokeCutout(box: DrawingBounds) {
+    const source = canvasRef.current!;
+    const left = Math.floor(box.left * source.width);
+    const top = Math.floor(box.top * source.height);
+    const out = document.createElement("canvas");
+    out.width = Math.max(1, Math.ceil((box.right - box.left) * source.width));
+    out.height = Math.max(1, Math.ceil((box.bottom - box.top) * source.height));
+    const ctx = out.getContext("2d")!;
+    ctx.translate(-left, -top);
+    paintStrokes(ctx, source.width, source.height);
+    return out.toDataURL("image/png");
   }
   function refreshAnchor() {
     const b = drawingBounds(strokes.current);
@@ -92,7 +111,8 @@ export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMess
     <form className="drawing-composer" onSubmit={(e) => {
       e.preventDefault();
       if (blocked || !bounds || !anchor || !description.trim() || current.current) return;
-      void onGenerate({ image: canvasRef.current!.toDataURL("image/png"), cleanImage: capture.image.toDataURL("image/png"), description: description.trim(), anchor });
+      void onGenerate({ image: canvasRef.current!.toDataURL("image/png"), cleanImage: capture.image.toDataURL("image/png"),
+        strokeImage: strokeCutout(anchor.bounds), description: description.trim(), anchor });
     }}>
       <div className="drawing-tools"><span>{anchor ? "Size estimated · You'll choose where to place it" : "Draw the object's outline"}</span>
         <button type="button" disabled={!strokes.current.length} onClick={() => { strokes.current.pop(); refreshAnchor(); }}>Undo stroke</button>

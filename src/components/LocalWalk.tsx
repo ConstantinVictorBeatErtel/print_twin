@@ -74,9 +74,11 @@ export function Walk({ reset, paused = false, enabled = true, mouseLookRef, onLo
     }, options);
     const movement = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight"]);
     window.addEventListener("keydown", (e) => {
-      if (!settings.current.enabled || (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]')) || e.metaKey || e.ctrlKey || e.altKey || !movement.has(e.code)) return;
+      // `paused` covers placement and the drawing overlay: Q/E turn the armed object there,
+      // and must not also fly the camera.
+      if (!settings.current.enabled || settings.current.paused || (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]')) || e.metaKey || e.ctrlKey || e.altKey || !movement.has(e.code)) return;
       e.preventDefault();
-      if (!settings.current.paused && document.pointerLockElement !== canvas) capture();
+      if (document.pointerLockElement !== canvas) capture();
       keys.add(e.code);
     }, options);
     window.addEventListener("keyup", (e) => { keys.delete(e.code); }, options);
@@ -85,7 +87,7 @@ export function Walk({ reset, paused = false, enabled = true, mouseLookRef, onLo
     return () => { abort.abort(); release(); mouseLookRef.current = null; };
   }, [camera, gl, keys, mouseLookRef]);
   useFrame((_, delta) => {
-    if (!enabled) return;
+    if (!enabled || paused) return;
     const held = (a: string, b?: string) => Number(keys.has(a) || Boolean(b && keys.has(b)));
     direction.set(held("KeyD", "ArrowRight") - held("KeyA", "ArrowLeft"), held("KeyE") - held("KeyQ"), held("KeyS", "ArrowDown") - held("KeyW", "ArrowUp"));
     direction.normalize().applyAxisAngle(UP, camera.rotation.y);

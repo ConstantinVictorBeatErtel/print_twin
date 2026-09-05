@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as T from "three";
-import { drawingBounds, anchorDrawing, fitDrawing, cameraForAnchor } from "../src/lib/drawingPlacement.ts";
+import { drawingBounds, anchorDrawing, drawingQuad, fitDrawing, cameraForAnchor } from "../src/lib/drawingPlacement.ts";
 
 function room() {
   const scene = new T.Scene();
@@ -47,4 +47,26 @@ test("generation uses the captured camera after walking away, with a fitted visi
   const h = Math.max(...points.map(p => p.y)) - Math.min(...points.map(p => p.y));
   const occupancy = Math.max(w / .4, h / .7);
   assert.ok(occupancy > .999 && occupancy <= 1.00001, `Footprint occupancy: ${occupancy}`);
+});
+
+test("the drawn rectangle unprojects back to a quad that still covers it on screen", () => {
+  const { camera, scene } = room();
+  const anchor = anchorDrawing(bounds, camera, scene);
+  // Survive the trip through localStorage: the hanging sketch has to come back after a reload.
+  const revived = JSON.parse(JSON.stringify(anchor));
+  const quad = drawingQuad(revived);
+  assert.equal(quad.length, 4);
+  const shot = cameraForAnchor(revived);
+  const want = [
+    [bounds.left, bounds.bottom], [bounds.right, bounds.bottom],
+    [bounds.right, bounds.top], [bounds.left, bounds.top],
+  ];
+  quad.forEach((corner, i) => {
+    const ndc = corner.clone().project(shot);
+    assert.ok(Math.abs(ndc.x - (2 * want[i][0] - 1)) < 1e-6, `corner ${i} x`);
+    assert.ok(Math.abs(ndc.y - (1 - 2 * want[i][1])) < 1e-6, `corner ${i} y`);
+  });
+  // It hangs at the depth the base was anchored to, not at the camera.
+  const base = new T.Vector3().fromArray(anchor.position);
+  for (const corner of quad) assert.ok(corner.distanceTo(base) < 5);
 });

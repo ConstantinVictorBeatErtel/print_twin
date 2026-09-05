@@ -1,15 +1,20 @@
 // Armed placement: a translucent preview of a generated object that rides the room's real
 // surfaces under the cursor, committed with a click.
 //
-// The pose comes from src/lib/surfacePick.ts (collider mesh -> splat -> ground plane) and the
-// normalization from src/lib/fit.ts, which <Asset> applies identically — so the committed
+// The pose comes from src/lib/surfacePick.ts (collider mesh -> splat) via src/lib/placementPose.ts,
+// and the normalization from src/lib/fit.ts, which <Asset> applies identically — so the committed
 // object appears exactly where the ghost was, with no jump.
+//
+// This is also the editor for an object already in the room: WorldApp re-arms a placement with
+// its id, and it re-orients to whatever is under the cursor like any other placement. The keys
+// are the same too: Q/E turn, [ ] resize, R reset the turn, Enter commit, Esc cancel.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { disposeModel, gltfLoader } from "./Asset";
 import { fitToTarget, TARGET_SIZE } from "../lib/fit";
-import { orientTo, pickSurface, type PickSource } from "../lib/surfacePick";
+import { pickSurface, type PickSource } from "../lib/surfacePick";
+import { poseOnSurface, type Pose, type SurfaceKind } from "../lib/placementPose";
 
 // Defaults; the ?debug=1 panel can override each of these live.
 const PICK_HZ = 30;        // a 100-200k-tri intersect every frame is not free
@@ -17,13 +22,16 @@ const CLICK_SLOP_PX = 4;   // beyond this a left-press is an OrbitControls orbit
 const GHOST_OPACITY = 0.85;
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
+const STEP = 15 * Math.PI / 180;   // one Q/E press
+const FINE_STEP = 5 * Math.PI / 180; // …with Shift held
+const SIZE_STEP = 1.1;             // one [ or ] press
 
-export type GhostState = { source: PickSource; scale: number } | null;
+export type GhostState = { source: PickSource; scale: number; kind: SurfaceKind } | null;
 
 export function PlacementGhost({
   url, onCommit, onCancel, onPreview,
   targetSize, opacity = GHOST_OPACITY, pickHz = PICK_HZ, clickSlop = CLICK_SLOP_PX,
-  upright = false, yaw = 0, rotation, onError, onReady,
+  yaw = 0, onError, onReady, onYawDelta, onResetRotation,
   allow = { collider: true, splat: true, plane: true },
 }: {
   url: string;
@@ -35,15 +43,17 @@ export function PlacementGhost({
   pickHz?: number;
   clickSlop?: number;
   allow?: Record<PickSource, boolean>;
-  upright?: boolean;
   yaw?: number;
-  rotation?: number[];
   onError?: (message: string) => void;
   onReady?: () => void;
+  /** Q/E: turn the object about its own up axis. WorldApp owns `yaw` so the panel stays in sync. */
+  onYawDelta?: (radians: number) => void;
+  /** R: back to no turn. */
+  onResetRotation?: () => void;
 }) {
   const { gl, controls, camera, scene } = useThree();
   const group = useRef<THREE.Group>(null);
-  const pose = useRef<{ point: THREE.Vector3; quat: THREE.Quaternion } | null>(null);
+  const pose = useRef<Pose | null>(null);
   const lastPick = useRef(0);
   const [obj, setObj] = useState<THREE.Group | null>(null);
   const [scale, setScale] = useState(1);
@@ -51,10 +61,10 @@ export function PlacementGhost({
 
   // Latest callbacks and tunables, so the listener effect below doesn't re-subscribe on
   // every App render (and so a slider drag doesn't tear down the pointer handlers).
-  const cb = useRef({ onCommit, onCancel, onPreview, onError, onReady });
-  cb.current = { onCommit, onCancel, onPreview, onError, onReady };
-  const cfg = useRef({ pickHz, clickSlop, allow, upright, yaw, rotation });
-  cfg.current = { pickHz, clickSlop, allow, upright, yaw, rotation };
+  const cb = useRef({ onCommit, onCancel, onPreview, onError, onReady, onYawDelta, onResetRotation });
+  cb.current = { onCommit, onCancel, onPreview, onError, onReady, onYawDelta, onResetRotation };
+  const cfg = useRef({ pickHz, clickSlop, allow, yaw });
+  cfg.current = { pickHz, clickSlop, allow, yaw };
   const inside = useRef(false);
 
   useEffect(() => {
@@ -101,16 +111,13 @@ export function PlacementGhost({
       cb.current.onPreview?.(null);
       return;
     }
-    const quat = cfg.current.rotation
-      ? new THREE.Quaternion().setFromEuler(new THREE.Euler(...cfg.current.rotation as [number, number, number]))
-      : orientTo(cfg.current.upright ? new THREE.Vector3(0, 1, 0) : hit.normal, hit.point, state.camera);
-    quat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), cfg.current.yaw));
-    g.position.copy(hit.point);
-    g.quaternion.copy(quat);
+    const next = poseOnSurface(hit, state.camera, cfg.current.yaw);
+    g.position.copy(next.position);
+    g.quaternion.copy(next.quaternion);
     g.scale.setScalar(fit.scale * scaleRef.current);
     g.visible = true;
-    pose.current = { point: hit.point, quat };
-    cb.current.onPreview?.({ source: hit.source, scale: scaleRef.current });
+    pose.current = next;
+    cb.current.onPreview?.({ source: hit.source, scale: scaleRef.current, kind: next.kind });
   });
 
   // Pointer / wheel / keyboard while armed.
@@ -124,6 +131,15 @@ export function PlacementGhost({
     const orbit = controls as { enableZoom?: boolean } | null;
     const prevZoom = orbit?.enableZoom;
     if (orbit) orbit.enableZoom = false;
+
+    const commit = (p: Pose) => {
+      const euler = new THREE.Euler().setFromQuaternion(p.quaternion, "XYZ");
+      cb.current.onCommit(p.position.toArray(), [euler.x, euler.y, euler.z], scaleRef.current);
+    };
+    const resize = (factor: number) => {
+      scaleRef.current = THREE.MathUtils.clamp(scaleRef.current * factor, MIN_SCALE, MAX_SCALE);
+      setScale(scaleRef.current);
+    };
 
     let down: { x: number; y: number; button: number } | null = null;
     const onPointerDown = (e: PointerEvent) => { inside.current = true; down = { x: e.clientX, y: e.clientY, button: e.button }; };
@@ -140,21 +156,32 @@ export function PlacementGhost({
       const pointer = new THREE.Vector2((e.clientX - rect.left) / rect.width * 2 - 1, 1 - (e.clientY - rect.top) / rect.height * 2);
       const hit = pickSurface(new THREE.Raycaster(), camera, pointer, scene, cfg.current.allow);
       if (!hit) return;
-      const quat = cfg.current.rotation
-        ? new THREE.Quaternion().setFromEuler(new THREE.Euler(...cfg.current.rotation as [number, number, number]))
-        : orientTo(cfg.current.upright ? new THREE.Vector3(0, 1, 0) : hit.normal, hit.point, camera);
-      quat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), cfg.current.yaw));
-      const euler = new THREE.Euler().setFromQuaternion(quat, "XYZ");
-      cb.current.onCommit(hit.point.toArray(), [euler.x, euler.y, euler.z], scaleRef.current);
+      commit(poseOnSurface(hit, camera, cfg.current.yaw));
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const next = THREE.MathUtils.clamp(scaleRef.current * Math.exp(-e.deltaY * 0.0015), MIN_SCALE, MAX_SCALE);
-      scaleRef.current = next;
-      setScale(next);
+      resize(Math.exp(-e.deltaY * 0.0015));
     };
     const onContextMenu = (e: MouseEvent) => { e.preventDefault(); cb.current.onCancel(); };
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") cb.current.onCancel(); };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+      // Typing a size into the panel must not also nudge the object.
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      const step = e.shiftKey ? FINE_STEP : STEP;
+      switch (e.code) {
+        case "Escape": cb.current.onCancel(); return;
+        case "KeyQ": e.preventDefault(); cb.current.onYawDelta?.(-step); return;
+        case "KeyE": e.preventDefault(); cb.current.onYawDelta?.(step); return;
+        case "BracketLeft": e.preventDefault(); resize(1 / SIZE_STEP); return;
+        case "BracketRight": e.preventDefault(); resize(SIZE_STEP); return;
+        case "KeyR": e.preventDefault(); cb.current.onResetRotation?.(); return;
+        case "Enter":
+        case "NumpadEnter":
+          e.preventDefault();
+          if (pose.current) commit(pose.current);
+          return;
+      }
+    };
 
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("pointerenter", onEnter);
