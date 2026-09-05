@@ -334,6 +334,11 @@ body,
 .capture-preview img, .capture-preview video { width: 100%; max-height: 260px; object-fit: cover; border-radius: 14px; background: #070809; }
 .capture-preview div { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 0.85rem; }
 .capture-preview button { border: 0; background: transparent; color: var(--accent); cursor: pointer; font: inherit; }
+.capture-preview strong { overflow-wrap: anywhere; min-width: 0; }
+.capture-preview .capture-zip { min-height: 150px; flex-direction: column; justify-content: center; background: rgba(212, 120, 74, 0.06); border: 1px dashed var(--accent); border-radius: 14px; color: var(--accent); }
+.capture-zip > span:first-child { font-size: 3rem; }
+.world-experience { height: 100%; }
+.capture-loading { position: fixed; inset: 0; z-index: 20; }
 
 .capture-create {
   width: 100%;
@@ -354,6 +359,7 @@ body,
 .capture-loading .capture-card { padding-block: 70px; }
 .capture-spinner { width: 38px; height: 38px; margin: 0 auto 22px; border: 3px solid rgba(212, 120, 74, 0.25); border-top-color: var(--accent); border-radius: 50%; animation: capture-spin 0.9s linear infinite; }
 @keyframes capture-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .capture-spinner { animation: none; } }
 
 .hud-error p {
   max-width: 36rem;

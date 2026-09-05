@@ -81,7 +81,7 @@ export default function App() {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", height: "100%" }}>
       <aside style={{ padding: 12, color: "#eee", background: "#111", overflow: "auto", fontSize: 13 }}>
-        <h2 style={{ margin: "0 0 8px" }}>Spatial Hack</h2>
+        <h2 style={{ margin: "0 0 8px" }}>Galatea</h2>
         <div>room: <b>{room}</b> · {joined ? "joined" : <button onClick={async () => { await join({ room, sessionId, name: "me", color: randomColor() }); setJoined(true); }}>join multiplayer</button>}</div>
 
         <h3>World (World Labs)</h3>

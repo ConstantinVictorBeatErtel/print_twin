@@ -1,4 +1,4 @@
-# Print the World
+# Galatea
 
 Capture the room you are standing in, explore a generated 3D version of it, sketch
 objects into your view, and prepare what you like for a physical 3D print.
@@ -16,13 +16,19 @@ See `CLAUDE.md` for the agent-oriented overview.
 
 ## Setup
 
-The browser entry flow lives in `web/`. It accepts one photo or video, starts a
-server-side World Labs CLI job, shows upload/generation/opening states, and enters
-the generated room at `/?job=<job>`. Use the phone's native camera buttons on a
-mobile browser. This minimal flow uses the local Vite API seam because the active
-development checkout does not have a Convex deployment configured.
+The Galatea demo entry flow lives in `web/`. Select a photo, short video, or ZIP,
+then press **Create my world**. A three-second loading screen opens the saved
+`hackathon-stage-complete-02` room. The room starts loading beneath the transition;
+slow asset loads retain the viewer's loading indicator until ready. Selected files
+stay in the browser: this demo does not unpack ZIPs, upload captures, or call World
+Labs. Native phone photo/video capture buttons are also available.
+
+The saved room assets must be present in `data/worlds/hackathon-stage-complete-02/`
+(see the latest room download below). Open `/m` for the phone layout; the path is
+preserved when entering the world. Direct `?job=...` links open saved local worlds.
 
 ```sh
+npm --prefix web install
 npm run web
 ```
 
