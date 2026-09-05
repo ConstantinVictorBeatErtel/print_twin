@@ -1,6 +1,6 @@
 // World Labs Marble: generate → poll → cache assets in Convex storage.
 import { v } from "convex/values";
-import { action, internalMutation, query } from "./_generated/server";
+import { action, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 
@@ -22,6 +22,16 @@ export const list = query({
         panoUrl: w.panoStorageId ? await ctx.storage.getUrl(w.panoStorageId) : null,
       })),
     );
+  },
+});
+
+/** Resolve an already imported provider world before uploading its files again. */
+export const byWorldId = query({
+  args: { worldId: v.string() },
+  handler: async (ctx, { worldId }) => {
+    const world = await ctx.db.query('worlds').withIndex('by_worldId', (q) => q.eq('worldId', worldId))
+      .filter((q) => q.eq(q.field('status'), 'ready')).first();
+    return world ? { _id: world._id, splatUrl: world.splatStorageId ? await ctx.storage.getUrl(world.splatStorageId) : null } : null;
   },
 });
 
@@ -97,6 +107,53 @@ export const generateFromText = action({
       await ctx.runMutation(internal.worlds.update, { id, patch: { status: "failed", error: String(e?.message ?? e) } });
       throw e;
     }
+  },
+});
+
+/** Short-lived URL the browser POSTs one extracted zip asset to. See src/lib/worldZip.ts. */
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: (ctx) => ctx.storage.generateUploadUrl(),
+});
+
+/**
+ * Register a world whose assets were unzipped and uploaded by the client
+ * (`hackathon-room-full.zip` from scripts/package_room.py, or any zip with a splat
+ * plus an optional collider). No provider call, so it works with the venue Wi-Fi down.
+ */
+export const importUploaded = mutation({
+  args: {
+    name: v.string(),
+    splatStorageId: v.id("_storage"),
+    splatFileName: v.optional(v.string()),
+    colliderStorageId: v.optional(v.id("_storage")),
+    panoStorageId: v.optional(v.id("_storage")),
+    worldId: v.optional(v.string()),
+    model: v.optional(v.string()),
+    prompt: v.optional(v.string()),
+    metricScale: v.optional(v.number()),
+    groundOffset: v.optional(v.number()),
+    reuseExisting: v.optional(v.boolean()),
+  },
+  handler: async (ctx, a): Promise<Id<"worlds">> => {
+    if (a.reuseExisting && a.worldId) {
+      const existing = await ctx.db.query('worlds').withIndex('by_worldId', (q) => q.eq('worldId', a.worldId))
+        .filter((q) => q.eq(q.field('status'), 'ready')).first();
+      if (existing?.splatStorageId && await ctx.storage.getUrl(existing.splatStorageId)) return existing._id;
+    }
+    return ctx.db.insert("worlds", {
+      name: a.name,
+      prompt: a.prompt ?? "",
+      model: a.model ?? "upload",
+      status: "ready",
+      worldId: a.worldId,
+      splatStorageId: a.splatStorageId,
+      splatFileName: a.splatFileName,
+      colliderStorageId: a.colliderStorageId,
+      panoStorageId: a.panoStorageId,
+      metricScale: a.metricScale,
+      groundOffset: a.groundOffset,
+    });
   },
 });
 

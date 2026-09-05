@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Room mesh inspection</title>
+<style>
+body{margin:0;background:#151a20;color:#fff;font:14px system-ui}canvas{display:block}aside{position:absolute;top:12px;left:12px;width:300px;padding:14px;border-radius:12px;background:#15202bea;max-height:90vh;overflow:auto}h1{font-size:18px;margin:0 0 10px}button,select,input{padding:7px;margin:3px 0;background:#263746;border:1px solid #60717f;color:white;border-radius:5px}button{cursor:pointer}select{width:100%}label{display:block;margin:6px 0}textarea{box-sizing:border-box;width:100%;height:145px;font:11px monospace;background:#101820;color:#cde5f6}small{display:block;color:#b6c6d1;margin:8px 0}#status{margin:8px 0;white-space:pre-wrap}input[type=number]{width:70px}details{margin-top:8px}
+</style>
+<aside><h1>Room mesh inspection</h1><select id="file" aria-label="Mesh file"></select>
+<div id="status">Choose a mesh.</div>
+<button id="stage">Stage view</button> <button id="left">Look left</button> <button id="back">Look back</button> <button id="overview">Overview</button>
+<label><input id="wire" type="checkbox"> Wireframe</label>
+<label><input id="pick" type="checkbox"> Pick measurement points</label>
+<small>Pick lower window section: top-left, top-right, bottom-left outer frame corners. Width calibrates; height checks independently. Drag to orbit; scroll to zoom; right-drag to pan.</small>
+<button id="clear">Clear points</button><textarea id="points" aria-label="Picked measurement points" readonly></textarea>
+<details><summary>Camera position and target</summary><div id="cameraFields"></div><button id="apply">Apply camera</button></details>
+</aside>
+<script type="importmap">{"imports":{"three":"/three/build/three.module.js","three/addons/":"/three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+const scene=new THREE.Scene();scene.background=new THREE.Color('#727c85');
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.01,1000);
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));document.body.append(renderer.domElement);
+renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;
+scene.add(new THREE.HemisphereLight(0xffffff,0xb0b0b0,3));const sun=new THREE.DirectionalLight(0xffffff,2);sun.position.set(2,8,5);scene.add(sun);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;
+let model=null,box=null,meshHash='',selected=[],markers=[];
+const fields=document.querySelector('#cameraFields');
+for(const group of ['position','target']){const row=document.createElement('div');row.textContent=group+': ';for(const axis of ['x','y','z']){const input=document.createElement('input');input.type='number';input.step='.1';input.id=group+axis;input.setAttribute('aria-label',group+' '+axis);row.append(input);}fields.append(row);}
+function syncCamera(){for(const axis of ['x','y','z']){document.getElementById('position'+axis).value=camera.position[axis].toFixed(4);document.getElementById('target'+axis).value=controls.target[axis].toFixed(4);}}
+controls.addEventListener('end',syncCamera);
+function stage(){camera.position.set(0,1.6,0);controls.target.set(0,1.6,-5);controls.update();syncCamera();}
+function clear(){selected=[];for(const marker of markers){scene.remove(marker);marker.geometry.dispose();marker.material.dispose();}markers=[];document.querySelector('#points').value='';}
+document.querySelector('#stage').onclick=stage;
+document.querySelector('#left').onclick=()=>{const direction=controls.target.clone().sub(camera.position).applyAxisAngle(new THREE.Vector3(0,1,0),Math.PI/2);controls.target.copy(camera.position).add(direction);controls.update();syncCamera();};
+document.querySelector('#back').onclick=()=>{controls.target.copy(camera.position.clone().multiplyScalar(2).sub(controls.target));controls.update();syncCamera();};
+document.querySelector('#overview').onclick=()=>{if(!box)return;const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3()).length();camera.position.copy(center).add(new THREE.Vector3(size*.5,size*.4,size*.5));controls.target.copy(center);controls.update();syncCamera();};
+document.querySelector('#apply').onclick=()=>{for(const axis of ['x','y','z']){camera.position[axis]=Number(document.getElementById('position'+axis).value);controls.target[axis]=Number(document.getElementById('target'+axis).value);}controls.update();};
+document.querySelector('#clear').onclick=clear;
+document.querySelector('#wire').onchange=e=>model?.traverse(o=>{if(o.isMesh)for(const m of [].concat(o.material))m.wireframe=e.target.checked;});
+const file=document.querySelector('#file'),status=document.querySelector('#status');
+for(const name of await(await fetch('/files')).json()){const option=document.createElement('option');option.value=option.textContent=name;file.append(option);}
+const requested=new URLSearchParams(location.search).get('file');if([...file.options].some(o=>o.value===requested))file.value=requested;
+async function load(){clear();status.textContent='Loading mesh…';try{const data=await(await fetch('/mesh/'+encodeURIComponent(file.value))).arrayBuffer();meshHash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',data)),b=>b.toString(16).padStart(2,'0')).join('');const gltf=await new GLTFLoader().parseAsync(data,'');if(model){scene.remove(model);const disposed=new Set();model.traverse(o=>{if(!o.isMesh)return;o.geometry.dispose();for(const m of [].concat(o.material)){if(disposed.has(m))continue;disposed.add(m);for(const value of Object.values(m)){if(value?.isTexture&&!disposed.has(value)){disposed.add(value);value.dispose();}}m.dispose();}});}model=gltf.scene;scene.add(model);box=new THREE.Box3().setFromObject(model);let triangles=0;model.traverse(o=>{if(o.isMesh){triangles+=(o.geometry.index?.count??o.geometry.attributes.position.count)/3;if(o.geometry.attributes.color&&![].concat(o.material).some(m=>m.map)){for(const m of [].concat(o.material))m.dispose();o.material=new THREE.MeshBasicMaterial({vertexColors:true});}for(const m of [].concat(o.material)){m.side=THREE.DoubleSide;m.wireframe=document.querySelector('#wire').checked;}}});status.textContent=triangles.toLocaleString()+' triangles\nBounds: '+box.min.toArray().map(v=>v.toFixed(2))+' → '+box.max.toArray().map(v=>v.toFixed(2))+'\nPhysical accuracy is not certified.';stage();}catch(e){status.textContent='Load error: '+e.message;}}
+file.onchange=load;if(file.value)load();
+const ray=new THREE.Raycaster();let down;
+renderer.domElement.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);
+renderer.domElement.addEventListener('pointerup',e=>{if(!model||!document.querySelector('#pick').checked||!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>4)return;ray.setFromCamera(new THREE.Vector2(e.clientX/innerWidth*2-1,1-e.clientY/innerHeight*2),camera);const hit=ray.intersectObject(model,true)[0];if(!hit)return;selected.push(hit.point.toArray());const marker=new THREE.Mesh(new THREE.SphereGeometry(.025),new THREE.MeshBasicMaterial({color:0xff5544,depthTest:false}));marker.position.copy(hit.point);marker.renderOrder=1000;scene.add(marker);markers.push(marker);document.querySelector('#points').value=JSON.stringify({meshFile:file.value,meshSha256:meshHash,points:selected},null,2);});
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+renderer.setAnimationLoop(()=>{controls.update();renderer.render(scene,camera);});
+</script></html>

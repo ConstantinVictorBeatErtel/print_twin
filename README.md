@@ -1,4 +1,4 @@
-# Print the World
+# Galatea
 
 > **Working local drawing-to-3D viewer:** `npm ci` → `npm run dev:local` → open [localhost:5174/local.html](http://127.0.0.1:5174/local.html). Use the gear icon to enter your fal and Tripo keys. The room and pipeline are included; no Convex setup is needed. See [Draw directly into the placement viewer](#draw-directly-into-the-placement-viewer).
 
@@ -7,7 +7,7 @@ Capture the room you are standing in, explore a generated 3D version of it, sket
 objects into your view, and prepare what you like for a physical 3D print.
 Product architecture and scope decisions are in [HACKATHON_PLAN.md](HACKATHON_PLAN.md).
 
-The repo now holds two halves of that pipeline:
+The capture pipeline and app share a Convex import path:
 
 | Part | Path | What it does |
 | --- | --- | --- |
@@ -17,7 +17,47 @@ The repo now holds two halves of that pipeline:
 `docs/` carries both the capture write-ups and the per-vendor API references.
 See `CLAUDE.md` for the agent-oriented overview.
 
+## High-quality room mesh
+
+The completed stage room now also has a cleaned 16.17-million-triangle vertex-colored
+mesh and a textured mesh, with approximate window-based scale calibration.
+[Download the full HQ meshes and reports](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-hq-mesh-2026-09-05).
+See [the export, cleanup and scale guide](docs/HIGH_QUALITY_MESH.md) for local viewing,
+exact transforms and limitations. These are separate editing assets; the web app
+continues to use its saved splat and collider. The meshes are not yet watertight for printing.
+
 ## Setup
+
+The Galatea entry flow and original viewer now live together in `src/`. Select a
+photo, short video, or ZIP, then press **Create my world**. After a three-second
+transition, the saved `hackathon-stage-complete-02` room opens in the original app,
+including its object placement and multiplayer controls. Selected captures stay in
+the browser for this demo; they do not trigger World Labs generation. Native phone
+photo/video capture buttons are also available.
+
+`ConvexProjectClient` imports the saved manifest and assets into Convex storage on
+first use, which can extend the initial wait. Later entries reuse that world. The
+URL becomes `?world=<Convex ID>` so refresh resumes the same room. Legacy `?job=...`
+links import saved local worlds into the same app.
+
+For the first import, put assets in `data/worlds/hackathon-stage-complete-02/`
+(see the latest room download below). Alternatively, choose **Open existing app /
+import world ZIP** and use **Upload world .zip** to import the downloaded archive.
+That sidebar action reads the actual ZIP contents through the same Convex client;
+the entry screen's ZIP selection keeps the requested demo behavior.
+
+```sh
+npm install
+CONVEX_AGENT_MODE=anonymous npx convex dev  # dedicated local backend; keep running
+# In another terminal:
+npm run web
+```
+
+The Convex command writes the ignored `.env.local` configuration. `npm run web`
+serves the canonical root app; the commands in `web/` forward to it for compatibility.
+The older `web/src/` standalone implementation is no longer the active UI. The
+read-only `/world-assets/` route serves saved manifests and assets, never the CLI
+or generation credentials. Local Convex data and room binaries are not committed.
 
 Requires Node 22+ and Python 3 (HEIC conversion uses macOS `sips`).
 
@@ -182,27 +222,30 @@ npx convex env set TRIPO_API_KEY <key>
 npm run dev               # http://localhost:5173/?room=lobby
 ```
 
-Backend secrets are set on the Convex deployment, not read from `.env.local`. Sanity
-check without any API keys: the scene renders a grid; once a world is generated (or
-imported with `api.worlds.importExisting` from the Convex dashboard using a
-`world_id` made in the Marble app), it replaces the grid. Multiplayer test: open two
-tabs at `http://localhost:5173/?room=test` and click "join multiplayer" in both.
+Use this account-backed setup instead of the anonymous local backend when sharing
+one Convex deployment. Backend secrets are set on that deployment, not read from
+`.env.local`. Importing saved rooms needs no provider keys; the original World Labs
+and Tripo generation buttons do. Deploy the updated Convex functions with
+`npx convex dev` before connecting another checkout.
 
-The web half was written ahead of the event from public docs and has not yet been
-run against a live deployment — expect to fix a type or two on first build. Wiring
-the capture CLI's `manifest.json` output into Convex storage is the open seam
-between the two halves.
+The selected world ID is also the default placement/multiplayer room; an explicit
+`?room=...` still overrides it. To test multiplayer, open the same world URL in two
+different browsers and click **join multiplayer** in each (tabs in one browser
+share a session ID).
 
 ## Tests
 
 ```sh
 npm test
+npm run build
 python3 scripts/verify_world.py data/worlds/hackathon-room-video-01
 ```
 
 Tests cover request mode validation, coordinate transforms, API credential
 isolation, generation/download/resume behavior, corrupted download recovery,
-insufficient credits, provider failures, and ambiguous submission handling. The
+insufficient credits, provider failures, and ambiguous submission handling. Vitest
+also verifies local-manifest and ZIP imports into Convex, duplicate import
+prevention, retry behavior, and shared world IDs for placement and multiplayer. The
 verifier checks saved checksums, SPZ headers (and gzip CRC for legacy files), GLB
 structure, and image decoding. Capture assessment and source links:
 [docs/CAPTURE_REVIEW.md](docs/CAPTURE_REVIEW.md).

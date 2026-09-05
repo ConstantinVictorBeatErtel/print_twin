@@ -1,7 +1,7 @@
 // Tripo v3: generate object → poll → download GLB into Convex storage (URL dies in 5 min).
 import { v } from "convex/values";
 import { action, internalMutation, mutation, query } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 
 const BASE = "https://openapi.tripo3d.ai/v3";
@@ -93,6 +93,16 @@ export const generateFromImage = action({
       await ctx.runMutation(internal.assets.update, { id, patch: { status: "failed", error: String(e?.message ?? e) } });
       throw e;
     }
+  },
+});
+
+/** Drawing in Convex storage -> 3D. Storage URLs are public, so Tripo can fetch them. */
+export const generateFromDrawing = action({
+  args: { storageId: v.id("_storage"), model: v.optional(v.string()) },
+  handler: async (ctx, { storageId, model }): Promise<Id<"assets">> => {
+    const url = await ctx.storage.getUrl(storageId);
+    if (!url) throw new Error("drawing not found in storage");
+    return await ctx.runAction(api.assets.generateFromImage, { imageUrlOrToken: url, model });
   },
 });
 

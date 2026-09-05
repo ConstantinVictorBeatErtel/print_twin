@@ -24,7 +24,7 @@ All third-party API calls happen in **Convex actions** (`convex/worlds.ts`, `con
 npm install
 python3 -m pip install -r requirements-media.txt   # capture CLI media helpers
 npm run world -- credits                           # World Labs CLI (needs WORLDLABS_API_KEY in .env.local)
-npm test                                           # node --test, covers the capture CLI
+npm test                                           # capture CLI + Convex/client integration tests
 npx convex dev                     # first run: login + create deployment, writes .env.local
 npx convex env set WLT_API_KEY ... ; npx convex env set TRIPO_API_KEY ... ; npx convex env set MINT_API_KEY ...
 npm run dev                        # convex dev + vite
@@ -38,10 +38,20 @@ Multiplayer test: open two tabs at `http://localhost:5173/?room=test`, click "jo
 - Generation is slow (Tripo 10–120s, Marble 1–5 min): kick it off early, show status in UI, never block the render loop.
 - Keep the demo path (`src/App.tsx`) working at all times; put experiments behind `?feature=` flags.
 
-## Open seam
-The capture CLI writes `data/worlds/JOB/manifest.json` + `assets/`; the web app loads
-worlds from Convex storage. Nothing wires the two yet — importing a local manifest
-into Convex storage is the join. `api.worlds.importExisting` is the closest hook.
+## Capture integration
+`src/App.tsx` hosts the Galatea capture entry and three-second demo transition.
+`src/lib/ConvexProjectClient.ts` bridges saved CLI manifests and `readWorldZip`
+results into Convex storage via `api.worlds.importUploaded`. Demo entry reuses the
+saved stage world, with indexed provider-world-ID lookup and duplicate prevention;
+it does not generate from the selected capture. `src/WorldApp.tsx` retains the
+original viewer, placement and multiplayer. The URL's `world` is the Convex ID and
+default room ID; legacy `job` URLs import through the same bridge.
+
+Root `vite.config.ts` serves only saved `/world-assets/` files. `npm run web` and
+the compatibility commands in `web/` run this root app. `web/src/` is legacy code,
+not a second active viewer or CLI-driven dev server. The original sidebar's ZIP
+upload still imports the actual archive. A fresh backend needs the saved local
+assets or a ZIP import; neither backend data nor room binaries are in Git.
 
 ## Where to extend
 - NPC/agent: `npm i @convex-dev/agent ai @ai-sdk/anthropic`, enable in `convex/convex.config.ts`, add `convex/npc.ts`.

@@ -20,6 +20,9 @@ dist-local/
 .claude/
 .agents/
 skills-lock.json
+web/dist/
+mobile/.expo/
+mobile/dist/
 
 # Private API settings and generation results
 .local/
