@@ -9,6 +9,7 @@ import { Asset } from "./components/Asset";
 import { PlacementGhost, type GhostState } from "./components/PlacementGhost";
 import { DebugPanel, DEBUG_DEFAULTS, type DebugSettings } from "./components/DebugPanel";
 import { Players } from "./components/Players";
+import { DrawOverlay } from "./components/DrawOverlay";
 import { getSessionId, randomColor, roomFromUrl } from "./lib/session";
 import { readWorldZip, type ZipEntry } from "./lib/worldZip";
 
@@ -29,6 +30,7 @@ export default function App() {
   const uploadUrl = useMutation(api.worlds.generateUploadUrl);
   const importUploaded = useMutation(api.worlds.importUploaded);
   const genAsset = useAction(api.assets.generateFromText);
+  const genFromDrawing = useAction(api.assets.generateFromDrawing);
   const place = useMutation(api.assets.place);
   const clearRoom = useMutation(api.assets.clearRoom);
   const join = useMutation(api.players.join);
@@ -42,7 +44,26 @@ export default function App() {
   const [ghost, setGhost] = useState<GhostState>(null);
   const [cfg, setCfg] = useState<DebugSettings>(DEBUG_DEFAULTS);
   const [zipStatus, setZipStatus] = useState<string | null>(null);
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawBusy, setDrawBusy] = useState(false);
   const zipInput = useRef<HTMLInputElement>(null);
+
+  // Sketch -> PNG -> Convex storage -> Tripo. Same upload URL the .zip importer uses.
+  async function submitDrawing(png: Blob) {
+    setDrawBusy(true);
+    try {
+      const url = await uploadUrl();
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "image/png" }, body: png });
+      if (!res.ok) throw new Error(`drawing upload failed (${res.status})`);
+      const { storageId } = await res.json();
+      await genFromDrawing({ storageId });
+      setDrawMode(false);
+    } catch (e: any) {
+      alert(`drawing failed: ${e?.message ?? e}`);
+    } finally {
+      setDrawBusy(false);
+    }
+  }
 
   // A world .zip is unpacked in the browser and its assets pushed into Convex storage:
   // same end state as a Marble generation, but with no API key and no waiting.
@@ -102,7 +123,8 @@ export default function App() {
 
         <h3>Objects (Tripo)</h3>
         <input value={assetPrompt} onChange={(e) => setAssetPrompt(e.target.value)} style={{ width: "100%" }} />
-        <button onClick={() => genAsset({ prompt: assetPrompt, model: "P1-20260311" })}>Generate (P1)</button>
+        <button onClick={() => genAsset({ prompt: assetPrompt, model: "P1-20260311" })}>Generate (P1)</button>{" "}
+        <button onClick={() => setDrawMode((v) => !v)}>{drawMode ? "stop drawing" : "draw an object"}</button>
         <ul>{assets.map((a) => (
           <li key={a._id}>{a.prompt.slice(0, 30)} · {a.status}{" "}
             {a.status === "ready" && a.glbUrl && (
@@ -133,6 +155,7 @@ export default function App() {
         <p style={{ opacity: 0.6 }}>Set API keys with <code>npx convex env set WLT_API_KEY …</code> / <code>TRIPO_API_KEY</code>. See docs/.</p>
       </aside>
 
+      <div style={{ position: "relative" }}>
       <Canvas camera={{ position: [0, 1.6, 4], fov: 60, near: 0.05, far: 500 }}>
         <SparkSetup />
         <ambientLight intensity={0.6} />
@@ -161,8 +184,10 @@ export default function App() {
           {joined && <Players room={room} sessionId={sessionId} />}
           {!world && <Environment preset="city" />}
         </Suspense>
-        <OrbitControls makeDefault target={[0, 1, 0]} />
+        <OrbitControls makeDefault target={[0, 1, 0]} enabled={!drawMode} />
       </Canvas>
+      <DrawOverlay active={drawMode} busy={drawBusy} onSubmit={submitDrawing} />
+      </div>
     </div>
   );
 }
