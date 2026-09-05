@@ -18,7 +18,7 @@ export default defineSchema({
     metricScale: v.optional(v.number()),
     groundOffset: v.optional(v.number()),
     error: v.optional(v.string()),
-  }),
+  }).index("by_worldId", ["worldId"]),
 
   // A Tripo generated object, cached into Convex storage (Tripo URLs die in 5 min).
   assets: defineTable({

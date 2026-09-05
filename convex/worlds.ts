@@ -25,6 +25,16 @@ export const list = query({
   },
 });
 
+/** Resolve an already imported provider world before uploading its files again. */
+export const byWorldId = query({
+  args: { worldId: v.string() },
+  handler: async (ctx, { worldId }) => {
+    const world = await ctx.db.query('worlds').withIndex('by_worldId', (q) => q.eq('worldId', worldId))
+      .filter((q) => q.eq(q.field('status'), 'ready')).first();
+    return world ? { _id: world._id, splatUrl: world.splatStorageId ? await ctx.storage.getUrl(world.splatStorageId) : null } : null;
+  },
+});
+
 export const create = internalMutation({
   args: { name: v.string(), prompt: v.string(), model: v.string() },
   handler: (ctx, args) => ctx.db.insert("worlds", { ...args, status: "generating" }),
@@ -123,9 +133,15 @@ export const importUploaded = mutation({
     prompt: v.optional(v.string()),
     metricScale: v.optional(v.number()),
     groundOffset: v.optional(v.number()),
+    reuseExisting: v.optional(v.boolean()),
   },
-  handler: (ctx, a): Promise<Id<"worlds">> =>
-    ctx.db.insert("worlds", {
+  handler: async (ctx, a): Promise<Id<"worlds">> => {
+    if (a.reuseExisting && a.worldId) {
+      const existing = await ctx.db.query('worlds').withIndex('by_worldId', (q) => q.eq('worldId', a.worldId))
+        .filter((q) => q.eq(q.field('status'), 'ready')).first();
+      if (existing?.splatStorageId && await ctx.storage.getUrl(existing.splatStorageId)) return existing._id;
+    }
+    return ctx.db.insert("worlds", {
       name: a.name,
       prompt: a.prompt ?? "",
       model: a.model ?? "upload",
@@ -137,7 +153,8 @@ export const importUploaded = mutation({
       panoStorageId: a.panoStorageId,
       metricScale: a.metricScale,
       groundOffset: a.groundOffset,
-    }),
+    });
+  },
 });
 
 /** Import a world you already generated in the Marble app (paste the world_id). Costs nothing. */
