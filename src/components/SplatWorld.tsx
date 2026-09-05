@@ -16,7 +16,7 @@ export function SparkSetup() {
   return null;
 }
 
-export function SplatWorld({ url, metricScale = 1, groundOffset = 0, minRaycastOpacity = 0.2 }: { url: string; metricScale?: number; groundOffset?: number; minRaycastOpacity?: number }) {
+export function SplatWorld({ url, fileName, metricScale = 1, groundOffset = 0, minRaycastOpacity = 0.2 }: { url: string; fileName?: string; metricScale?: number; groundOffset?: number; minRaycastOpacity?: number }) {
   // Construct inside the effect, not useMemo: React StrictMode mounts, unmounts
   // and remounts in dev. A useMemo'd mesh would be disposed by the first
   // cleanup and then reused dead on remount -> silent black screen.
@@ -24,11 +24,13 @@ export function SplatWorld({ url, metricScale = 1, groundOffset = 0, minRaycastO
   useEffect(() => {
     // raycastable: lets Spark answer "what splat is under the cursor?" when a world ships
     // without a collider GLB. Approximate, but it keeps placement working.
-    const m = new SplatMesh({ url, raycastable: true, minRaycastOpacity });
+    // fileName: Convex storage URLs carry no extension. Spark sniffs SPZ/PLY magic
+    // bytes fine, but .splat/.ksplat have none — pass the original name so uploads work.
+    const m = new SplatMesh({ url, fileName, raycastable: true, minRaycastOpacity });
     m.userData.splat = true;
     setMesh(m);
     return () => { setMesh(null); m.dispose?.(); };
-  }, [url, minRaycastOpacity]);
+  }, [url, fileName, minRaycastOpacity]);
   if (!mesh) return null;
   // Marble SPZ is OpenCV (+y down, +z forward) -> flip Y and Z for Three.js; scale to metres.
   return (

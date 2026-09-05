@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment } from "@react-three/drei";
 import { useAction, useMutation, useQuery } from "convex/react";
@@ -10,6 +10,7 @@ import { PlacementGhost, type GhostState } from "./components/PlacementGhost";
 import { DebugPanel, DEBUG_DEFAULTS, type DebugSettings } from "./components/DebugPanel";
 import { Players } from "./components/Players";
 import { getSessionId, randomColor, roomFromUrl } from "./lib/session";
+import { readWorldZip, type ZipEntry } from "./lib/worldZip";
 
 export default function App() {
   const room = useMemo(roomFromUrl, []);
@@ -25,6 +26,8 @@ export default function App() {
   const assets = useQuery(api.assets.list) ?? [];
   const placements = useQuery(api.assets.placementsInRoom, { room }) ?? [];
   const genWorld = useAction(api.worlds.generateFromText);
+  const uploadUrl = useMutation(api.worlds.generateUploadUrl);
+  const importUploaded = useMutation(api.worlds.importUploaded);
   const genAsset = useAction(api.assets.generateFromText);
   const place = useMutation(api.assets.place);
   const clearRoom = useMutation(api.assets.clearRoom);
@@ -38,6 +41,37 @@ export default function App() {
   const [armed, setArmed] = useState<{ assetId: Id<"assets">; glbUrl: string } | null>(null);
   const [ghost, setGhost] = useState<GhostState>(null);
   const [cfg, setCfg] = useState<DebugSettings>(DEBUG_DEFAULTS);
+  const [zipStatus, setZipStatus] = useState<string | null>(null);
+  const zipInput = useRef<HTMLInputElement>(null);
+
+  // A world .zip is unpacked in the browser and its assets pushed into Convex storage:
+  // same end state as a Marble generation, but with no API key and no waiting.
+  async function uploadWorldZip(file: File) {
+    setZipStatus(`reading ${file.name}…`);
+    try {
+      const zip = await readWorldZip(file);
+      const store = async (entry: ZipEntry | undefined) => {
+        if (!entry) return undefined;
+        setZipStatus(`uploading ${entry.name}…`);
+        const url = await uploadUrl();
+        const res = await fetch(url, { method: "POST", headers: { "Content-Type": entry.blob.type }, body: entry.blob });
+        if (!res.ok) throw new Error(`upload of ${entry.name} failed (${res.status})`);
+        return (await res.json()).storageId as Id<"_storage">;
+      };
+      const splatStorageId = (await store(zip.splat))!;
+      const colliderStorageId = await store(zip.collider);
+      const panoStorageId = await store(zip.pano);
+      const id = await importUploaded({
+        name: zip.name, splatStorageId, splatFileName: zip.splat.name, colliderStorageId, panoStorageId,
+        worldId: zip.worldId, model: zip.model, prompt: zip.prompt,
+        metricScale: zip.metricScale, groundOffset: zip.groundOffset,
+      });
+      setActiveWorld(id);
+      setZipStatus(`loaded ${zip.name} (${zip.splat.name}${zip.collider ? " + collider" : ", no collider"})`);
+    } catch (e: any) {
+      setZipStatus(`failed: ${e?.message ?? e}`);
+    }
+  }
 
   const world = worlds.find((w) => w._id === activeWorld) ?? worlds.find((w) => w.status === "ready");
   // Debug sliders nudge the room transform so collider/splat misalignment can be found by hand.
@@ -54,6 +88,14 @@ export default function App() {
         <textarea value={worldPrompt} onChange={(e) => setWorldPrompt(e.target.value)} rows={3} style={{ width: "100%" }} />
         <button onClick={() => genWorld({ prompt: worldPrompt, model: "marble-1.0-draft" })}>Generate (draft)</button>{" "}
         <button onClick={() => genWorld({ prompt: worldPrompt, model: "marble-1.1" })}>Generate (1.1)</button>
+        <div style={{ margin: "6px 0" }}>
+          <input
+            ref={zipInput} type="file" accept=".zip,application/zip,application/x-zip-compressed" style={{ display: "none" }}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadWorldZip(f); }}
+          />
+          <button onClick={() => zipInput.current?.click()}>Upload world .zip</button>
+          {zipStatus && <div style={{ opacity: 0.7, marginTop: 4 }}>{zipStatus}</div>}
+        </div>
         <ul>{worlds.map((w) => (
           <li key={w._id}><button disabled={w.status !== "ready"} onClick={() => setActiveWorld(w._id)}>{w.name}</button> {w.status}{w.error ? ` — ${w.error.slice(0, 80)}` : ""}</li>
         ))}</ul>
@@ -96,7 +138,7 @@ export default function App() {
         <ambientLight intensity={0.6} />
         <directionalLight position={[3, 5, 2]} intensity={1.2} />
         <Suspense fallback={null}>
-          {world?.splatUrl && <SplatWorld url={world.splatUrl} metricScale={metricScale} groundOffset={groundOffset} minRaycastOpacity={cfg.minRaycastOpacity} />}
+          {world?.splatUrl && <SplatWorld url={world.splatUrl} fileName={world.splatFileName} metricScale={metricScale} groundOffset={groundOffset} minRaycastOpacity={cfg.minRaycastOpacity} />}
           {world?.colliderUrl && <Collider url={world.colliderUrl} metricScale={metricScale} groundOffset={groundOffset} visible={debug && cfg.showCollider} />}
           {!world && <gridHelper args={[20, 20]} />}
           {placements.map((p) => p.glbUrl && <Asset key={p._id} url={p.glbUrl} position={p.position} rotation={p.rotation} scale={p.scale} targetSize={cfg.targetSize} />)}

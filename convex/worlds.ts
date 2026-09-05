@@ -1,6 +1,6 @@
 // World Labs Marble: generate → poll → cache assets in Convex storage.
 import { v } from "convex/values";
-import { action, internalMutation, query } from "./_generated/server";
+import { action, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 
@@ -98,6 +98,46 @@ export const generateFromText = action({
       throw e;
     }
   },
+});
+
+/** Short-lived URL the browser POSTs one extracted zip asset to. See src/lib/worldZip.ts. */
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: (ctx) => ctx.storage.generateUploadUrl(),
+});
+
+/**
+ * Register a world whose assets were unzipped and uploaded by the client
+ * (`hackathon-room-full.zip` from scripts/package_room.py, or any zip with a splat
+ * plus an optional collider). No provider call, so it works with the venue Wi-Fi down.
+ */
+export const importUploaded = mutation({
+  args: {
+    name: v.string(),
+    splatStorageId: v.id("_storage"),
+    splatFileName: v.optional(v.string()),
+    colliderStorageId: v.optional(v.id("_storage")),
+    panoStorageId: v.optional(v.id("_storage")),
+    worldId: v.optional(v.string()),
+    model: v.optional(v.string()),
+    prompt: v.optional(v.string()),
+    metricScale: v.optional(v.number()),
+    groundOffset: v.optional(v.number()),
+  },
+  handler: (ctx, a): Promise<Id<"worlds">> =>
+    ctx.db.insert("worlds", {
+      name: a.name,
+      prompt: a.prompt ?? "",
+      model: a.model ?? "upload",
+      status: "ready",
+      worldId: a.worldId,
+      splatStorageId: a.splatStorageId,
+      splatFileName: a.splatFileName,
+      colliderStorageId: a.colliderStorageId,
+      panoStorageId: a.panoStorageId,
+      metricScale: a.metricScale,
+      groundOffset: a.groundOffset,
+    }),
 });
 
 /** Import a world you already generated in the Marble app (paste the world_id). Costs nothing. */

@@ -11,6 +11,7 @@ export default defineSchema({
     worldId: v.optional(v.string()),          // World Labs world_id
     operationId: v.optional(v.string()),
     splatStorageId: v.optional(v.id("_storage")),   // cached 500k .spz
+    splatFileName: v.optional(v.string()),    // e.g. "splat-500k.spz" — Convex storage URLs have no extension
     colliderStorageId: v.optional(v.id("_storage")), // cached collider .glb
     panoStorageId: v.optional(v.id("_storage")),
     spzUrl: v.optional(v.string()),           // original signed URL (may expire)
