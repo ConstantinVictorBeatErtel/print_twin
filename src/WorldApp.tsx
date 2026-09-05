@@ -20,7 +20,9 @@ import { Walk, type MouseLook } from "./components/LocalWalk";
 import { Players } from "./components/Players";
 import { DebugPanel, DEBUG_DEFAULTS, type DebugSettings } from "./components/DebugPanel";
 import { DrawingBridge, DrawingLayer, type DrawingCapture, type DrawingRequest } from "./components/DrawingLayer";
+import { SketchSolver, type SolveSketchYaw } from "./components/SketchSolver";
 import { fitDrawing, type DrawingAnchor } from "./lib/drawingPlacement";
+import { composeYaw } from "./lib/sketchOrientation";
 import { usePlacementHistory, type PlacementInput } from "./lib/placementHistory";
 import { ConvexProjectClient } from "./lib/ConvexProjectClient";
 import { getSessionId, randomColor } from "./lib/session";
@@ -117,12 +119,18 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const [job, setJob] = useState<{ assetId: Id<"assets">; anchor: DrawingAnchor; startedAt: number } | null>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(ANCHOR_KEY) || "null");
-      if (saved?.assetId && saved.anchor?.cameraWorld?.length === 16 && saved.anchor?.projection?.length === 16) return saved;
+      if (saved?.assetId && saved.anchor?.cameraWorld?.length === 16 && saved.anchor?.projection?.length === 16
+        && Array.isArray(saved.anchor?.strokes)) return saved;
     } catch { /* a corrupt entry just means no recovery */ }
     return null;
   });
   const jobAsset = job ? assets.find((a) => a._id === job.assetId) : undefined;
-  const sized = useRef(new Set<string>());
+  // Convex reactivity re-runs the completion effect on every placement change, so a finished
+  // mesh is only ever auto-placed once.
+  const placedJobs = useRef(new Set<string>());
+  const solveRef = useRef<SolveSketchYaw | null>(null);
+  // Whether the yaw sweep found a clear winner, so the card can say why an object faces you.
+  const [facing, setFacing] = useState<"sketched" | "camera" | null>(null);
 
   const active = placements.find((p) => p._id === selected);
   const readyAssets = assets.filter((a) => a.status === "ready" && a.glbUrl);
@@ -154,28 +162,61 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
     return () => clearInterval(timer);
   }, [job, jobAsset?.status]);
 
-  // A finished mesh is measured against the drawing that produced it, then put in your
-  // hand. Generation alone never places anything — you still choose where it goes.
+  // A finished mesh goes straight into the room, where the drawing said it should be.
+  //
+  // The anchor already holds a real contact point and a surface-aligned rotation, measured
+  // against the collider when the drawing was made — it only ever needed to be used. What the
+  // anchor cannot know is which way round the object faces, because Klein re-poses the cutout
+  // into a centred product view; SketchSolver recovers that by matching rendered silhouettes
+  // against the user's ink. A symmetric object has no answer to recover, so it keeps orientTo's
+  // face-the-camera yaw rather than snapping to a coin-flip.
   useEffect(() => {
     if (!job || !jobAsset || jobAsset.status !== "ready" || !jobAsset.glbUrl) return;
-    if (sized.current.has(jobAsset._id)) return;
-    sized.current.add(jobAsset._id);
-    let alive = true;
+    if (placedJobs.current.has(jobAsset._id)) return;
+    placedJobs.current.add(jobAsset._id);
+    // StrictMode runs this twice on mount, and a reload can restore an already-finished job.
+    // Claiming the id up front stops a double placement; releasing it again on a run that never
+    // reached `place` stops the discarded first run from swallowing the object entirely.
+    let alive = true, committed = false;
     void (async () => {
-      let targetSize: number | undefined;
+      const url = jobAsset.glbUrl!;
+      let input: PlacementInput | null = null;
+      let sketched = false;
       try {
-        const gltf = await gltfLoader.loadAsync(jobAsset.glbUrl!);
-        try { targetSize = fitDrawing(gltf.scene, job.anchor).targetSize; }
-        finally { disposeModel(gltf.scene); }
+        const gltf = await gltfLoader.loadAsync(url);
+        try {
+          const fit = fitDrawing(gltf.scene, job.anchor);
+          const match = solveRef.current?.(gltf.scene, job.anchor, fit.targetSize) ?? null;
+          sketched = Boolean(match?.confident);
+          input = {
+            assetId: jobAsset._id,
+            position: fit.position,
+            rotation: sketched ? composeYaw(fit.rotation, match!.yaw) : fit.rotation,
+            scale: 1,
+            targetSize: sketched ? match!.targetSize : fit.targetSize,
+          };
+        } finally { disposeModel(gltf.scene); }
       } catch {
-        // A size estimate is a convenience; the object is still placeable without it.
+        // No pose could be derived (empty geometry, or the GLB would not load). Fall back to
+        // placing it by hand rather than dropping the object the user just paid to generate.
       }
-      if (alive) arm(jobAsset._id, jobAsset.glbUrl!, undefined, targetSize);
+      if (!alive) return;
+      committed = true;   // no await since the check above, so the cleanup cannot slip in here
+      if (!input) { arm(jobAsset._id, url); return; }
+      try {
+        const id = await place({ room, ...input });
+        history.recordPlace(id, input);   // inverse-op stack: Undo removes it, multiplayer-safe
+        setSelected(id);
+        setFacing(sketched ? "sketched" : "camera");
+      } catch (e) {
+        setError(`Could not place your object: ${e instanceof Error ? e.message : String(e)}`);
+        arm(jobAsset._id, url, undefined, input.targetSize);
+      }
     })();
-    return () => { alive = false; };
-  }, [job, jobAsset, arm]);
+    return () => { alive = false; if (!committed) placedJobs.current.delete(jobAsset._id); };
+  }, [job, jobAsset, arm, place, room, history]);
 
-  const dismissJob = () => { setJob(null); localStorage.removeItem(ANCHOR_KEY); };
+  const dismissJob = () => { setJob(null); setFacing(null); localStorage.removeItem(ANCHOR_KEY); };
 
   async function submitDrawing(request: DrawingRequest) {
     setSubmitting(true); setError("");
@@ -191,7 +232,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       const assetId = await startSketch({ imageStorageId, cleanStorageId, description: request.description });
       const next = { assetId, anchor: request.anchor, startedAt: Date.now() };
       localStorage.setItem(ANCHOR_KEY, JSON.stringify(next));
-      setJob(next); setElapsed(0); setDrawing(null);
+      setJob(next); setElapsed(0); setDrawing(null); setFacing(null);
     } catch (e) {
       setError(`Could not start generation: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -370,6 +411,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       <Canvas frameloop={drawing ? "never" : "always"} dpr={1} gl={{ antialias: false }} camera={{ position: [0, 1.6, 0], fov: 65, near: 0.02, far: 500 }}>
         <SparkSetup />
         <DrawingBridge captureRef={captureRef} />
+        <SketchSolver solveRef={solveRef} />
         <ambientLight intensity={1.4} />
         <directionalLight position={[3, 5, 2]} intensity={2} />
         {world?.splatUrl && <SplatWorld url={world.splatUrl} fileName={world.splatFileName ?? undefined}
@@ -425,17 +467,24 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
           {jobAsset?.cutoutUrl && <img src={jobAsset.cutoutUrl} alt="Generated object" />}
           <div className="generation-content">
             <div className="section-heading">
-              <strong>{jobInHand ? "Ready to place" : jobPlaced ? "Added to your room" : jobAsset?.status === "ready" ? "In your library"
+              <strong>{jobInHand ? "Ready to place" : jobPlaced ? "Placed where you drew it" : jobAsset?.status === "ready" ? "In your library"
                 : jobAsset?.status === "failed" ? "Generation failed" : submitting ? "Sending drawing" : "Creating your object"}</strong>
               {generating && <span>{elapsed.toFixed(0)}s{typeof jobAsset?.progress === "number" ? ` · ${jobAsset.progress}%` : ""}</span>}
             </div>
             <p>{jobAsset?.error || (jobInHand ? "Move over a room surface, then click to place."
-              : jobPlaced ? "Select your object to adjust it."
+              : jobPlaced ? (facing === "sketched" ? "Turned to face the way you sketched it."
+                : facing === "camera" ? "Facing you — the shape was too symmetric to tell which way round it goes."
+                : "Select your object to adjust it.")
               : jobAsset?.status === "ready" ? "Choose Place when you're ready."
               : "Klein cleans up your sketch, then Tripo builds it with colour.")}</p>
             {generating && <div className="pipeline-steps">{STAGES.map(([key, label]) =>
               <span key={key} className={key === stage ? "current" : ""}>{label}</span>)}</div>}
             <div className="row wrap">
+              {jobPlaced && jobAsset?.glbUrl && <button onClick={() => {
+                const placed = placements.find((p) => p.assetId === jobAsset._id);
+                if (placed) arm(placed.assetId, jobAsset.glbUrl!, placed._id);
+              }}>Move</button>}
+              {jobPlaced && <button disabled={!history.canUndo || !!armed} onClick={() => void history.undo()}>Undo</button>}
               {jobAsset?.status === "ready" && !jobInHand && !jobPlaced && jobAsset.glbUrl &&
                 <button onClick={() => arm(jobAsset._id, jobAsset.glbUrl!)}>Place object</button>}
               {jobAsset?.glbUrl && <a download={`${safeFilename(jobAsset.description ?? "object")}.glb`} href={jobAsset.glbUrl}>Color GLB ↗</a>}

@@ -64,10 +64,19 @@ players all come from Convex; nothing is stored in IndexedDB.
 - Sizes: `fit.ts` normalizes every GLB so its longest dimension is `targetSize` metres and
   its bottom-centre sits at the anchor. `PlacementGhost` and `Asset` run identical maths,
   so a committed object does not jump.
-- Sketching: `DrawingLayer` freezes the frame, `drawingPlacement.ts` anchors the drawing's
-  bottom-centre to a surface and stores the camera matrices; `fitDrawing` uses them to
-  estimate a size. The anchor's *position* is deliberately discarded — you still click
-  where the object goes.
+- Sketching: `DrawingLayer` freezes the frame; `drawingPlacement.ts` raycasts the base of the
+  ink to a real surface, and stores that contact point, the surface-aligned rotation, the
+  camera matrices and the strokes themselves. `fitDrawing` replays the matrices to estimate a
+  size. A finished mesh is then **placed automatically** at the anchor — no click. `arm`/
+  `PlacementGhost` remain for the library's Place button and for Move.
+- Sketch orientation: Klein re-poses the cutout into a centred product view, so the only record
+  of the drawn viewpoint is the user's ink. `sketchOrientation.ts` (pure, injected renderer)
+  rasterizes the strokes and chamfer-matches them against silhouettes of the mesh rendered at a
+  sweep of yaws by `SketchSolver.tsx` (one tiled render target, one readback, inside `<Canvas>`
+  so it reuses the app's GL context). `alignToBox` scales *uniformly* — the silhouette's aspect
+  ratio is the yaw signal, so do not stretch it to fit. When no yaw beats the median by 15% the
+  object is rotationally ambiguous and keeps `orientTo`'s face-the-camera yaw; `composeYaw`
+  post-multiplies so the yaw is about the surface normal, not world up.
 - Undo/redo is an inverse-operation stack (`src/lib/placementHistory.ts`), not array
   snapshots: placements are shared, so replaying a snapshot would revert other players.
 

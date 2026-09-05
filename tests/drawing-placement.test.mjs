@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as T from "three";
-import { drawingBounds, anchorDrawing, fitDrawing, cameraForAnchor } from "../src/lib/drawingPlacement.ts";
+import { drawingBounds, anchorDrawing, fitDrawing, cameraForAnchor, contactPoint, decimate } from "../src/lib/drawingPlacement.ts";
 
 function room() {
   const scene = new T.Scene();
@@ -12,6 +12,8 @@ function room() {
   return { scene, camera };
 }
 const bounds = { left: .4, right: .6, top: .3, bottom: .65 };
+// A closed rectangular outline over `bounds`, symmetric so its base centroid is x = .5.
+const outline = [{ width: .004, points: [{ x: .4, y: .3 }, { x: .6, y: .3 }, { x: .6, y: .65 }, { x: .4, y: .65 }, { x: .4, y: .3 }] }];
 test("drawing needs an outline, bounds combine all strokes without viewport pixels", () => {
   assert.equal(drawingBounds([]), null);
   assert.equal(drawingBounds([{ points: [{ x: .5, y: .5 }] }]), null);
@@ -19,17 +21,17 @@ test("drawing needs an outline, bounds combine all strokes without viewport pixe
 });
 test("drawing base is anchored to its exact screen ray on a real surface", () => {
   const { camera, scene } = room();
-  const anchor = anchorDrawing(bounds, camera, scene);
+  const anchor = anchorDrawing(outline, camera, scene);
   assert.equal(anchor.source, "collider");
   assert.ok(Math.abs(anchor.position[1]) < 1e-7);
   const base = new T.Vector3().fromArray(anchor.position).project(camera);
   assert.ok(Math.abs(base.x - (bounds.left + bounds.right - 1)) < 1e-7);
   assert.ok(Math.abs(base.y - (1 - bounds.bottom * 2)) < 1e-7);
-  assert.throws(() => anchorDrawing(bounds, camera, new T.Scene()), /No nearby room surface/);
+  assert.throws(() => anchorDrawing(outline, camera, new T.Scene()), /No nearby room surface/);
 });
 test("generation uses the captured camera after walking away, with a fitted visible size", () => {
   const { camera, scene } = room();
-  const anchor = anchorDrawing(bounds, camera, scene);
+  const anchor = anchorDrawing(outline, camera, scene);
   const model = new T.Group();
   const mesh = new T.Mesh(new T.BoxGeometry(2, 4, 1)); mesh.position.set(3, 8, -2); model.add(mesh);
   const before = fitDrawing(model, anchor);
@@ -47,4 +49,29 @@ test("generation uses the captured camera after walking away, with a fitted visi
   const h = Math.max(...points.map(p => p.y)) - Math.min(...points.map(p => p.y));
   const occupancy = Math.max(w / .4, h / .7);
   assert.ok(occupancy > .999 && occupancy <= 1.00001, `Footprint occupancy: ${occupancy}`);
+});
+
+test("the contact point follows the ink resting on the surface, not the bounding box corner", () => {
+  // A stroke whose tail flicks out to the right widens the box, but the object still sits
+  // where the mass of ink meets the table.
+  const tail = [{ width: .004, points: [
+    { x: .4, y: .3 }, { x: .5, y: .3 }, { x: .5, y: .65 }, { x: .4, y: .65 }, { x: .4, y: .3 }, { x: .9, y: .32 },
+  ] }];
+  const box = drawingBounds(tail);
+  assert.equal(box.right, .9);
+  assert.ok(Math.abs(contactPoint(tail, box).x - .45) < 1e-9, "base ignores the tail");
+  assert.ok(Math.abs((box.left + box.right) / 2 - .45) > .1, "the box centre would have been wrong");
+  // With no ink in the base band at all, fall back to the box.
+  assert.deepEqual(contactPoint([], box), { x: (box.left + box.right) / 2, y: box.bottom });
+});
+
+test("the anchor carries decimated ink, keeping every stroke's endpoints", () => {
+  const { camera, scene } = room();
+  assert.deepEqual(anchorDrawing(outline, camera, scene).strokes, outline);
+  const long = [{ width: .004, points: Array.from({ length: 5000 }, (_, i) => ({ x: .4 + i / 25000, y: .6 })) }];
+  const small = decimate(long, 600);
+  const points = small[0].points;
+  assert.ok(points.length <= 600 && points.length > 100, `kept ${points.length}`);
+  assert.deepEqual(points[0], long[0].points[0]);
+  assert.deepEqual(points.at(-1), long[0].points.at(-1));
 });

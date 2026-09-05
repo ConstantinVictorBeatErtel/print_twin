@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useThree } from "@react-three/fiber";
 import { PerspectiveCamera } from "three";
-import { anchorDrawing, drawingBounds, type DrawingAnchor, type DrawingBounds, type Point } from "../lib/drawingPlacement";
+import { anchorDrawing, contactPoint, drawingBounds, type DrawingAnchor, type Point, type Stroke } from "../lib/drawingPlacement";
 
-export type DrawingCapture = { image: HTMLCanvasElement; anchor: (bounds: DrawingBounds) => DrawingAnchor };
+export type DrawingCapture = { image: HTMLCanvasElement; anchor: (strokes: Stroke[]) => DrawingAnchor };
 export type DrawingRequest = { image: string; cleanImage: string; description: string; anchor: DrawingAnchor };
 export function DrawingBridge({ captureRef }: { captureRef: React.MutableRefObject<(() => DrawingCapture) | null> }) {
   const { gl, camera, scene } = useThree();
@@ -16,14 +16,13 @@ export function DrawingBridge({ captureRef }: { captureRef: React.MutableRefObje
       image.width = Math.round(gl.domElement.width * ratio); image.height = Math.round(gl.domElement.height * ratio);
       image.getContext("2d")!.drawImage(gl.domElement, 0, 0, image.width, image.height);
       const frozen = (camera as PerspectiveCamera).clone();
-      return { image, anchor: (bounds) => anchorDrawing(bounds, frozen, scene) };
+      return { image, anchor: (strokes) => anchorDrawing(strokes, frozen, scene) };
     };
     return () => { captureRef.current = null; };
   }, [gl, camera, scene, captureRef]);
   return null;
 }
 
-type Stroke = { points: Point[]; width: number };
 const INK = "#ff5488";
 export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMessage }: { capture: DrawingCapture; onCancel: () => void; onGenerate: (request: DrawingRequest) => Promise<void>; blocked: boolean; errorMessage: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -53,10 +52,9 @@ export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMess
     }
   }
   function refreshAnchor() {
-    const b = drawingBounds(strokes.current);
     setAnchor(null); setError("");
-    if (b) {
-      try { setAnchor(capture.anchor(b)); }
+    if (drawingBounds(strokes.current)) {
+      try { setAnchor(capture.anchor(strokes.current)); }
       catch (e) { setError((e as Error).message); }
     }
     setRevision((n) => n + 1);
@@ -88,20 +86,22 @@ export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMess
       onPointerMove={(e) => { if (current.current?.pointerId === e.pointerId) { current.current.stroke.points.push(point(e)); render(); } }}
       onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end} />
     <div className="drawing-heading"><span className="live-dot" />DRAW IN YOUR ROOM<span>Outline an object. Let its base touch a surface.</span></div>
-    {bounds && <div className="drawing-bounds" style={{ left: `${bounds.left * 100}%`, top: `${bounds.top * 100}%`, width: `${(bounds.right - bounds.left) * 100}%`, height: `${(bounds.bottom - bounds.top) * 100}%` }}><span className={anchor ? "anchor valid" : "anchor"} title="Object contact point" /></div>}
+    {bounds && <div className="drawing-bounds" style={{ left: `${bounds.left * 100}%`, top: `${bounds.top * 100}%`, width: `${(bounds.right - bounds.left) * 100}%`, height: `${(bounds.bottom - bounds.top) * 100}%` }}>
+      <span className={anchor ? "anchor valid" : "anchor"} title="Object contact point"
+        style={{ left: `${(contactPoint(strokes.current, bounds).x - bounds.left) / (bounds.right - bounds.left) * 100}%` }} /></div>}
     <form className="drawing-composer" onSubmit={(e) => {
       e.preventDefault();
       if (blocked || !bounds || !anchor || !description.trim() || current.current) return;
       void onGenerate({ image: canvasRef.current!.toDataURL("image/png"), cleanImage: capture.image.toDataURL("image/png"), description: description.trim(), anchor });
     }}>
-      <div className="drawing-tools"><span>{anchor ? "Size estimated · You'll choose where to place it" : "Draw the object's outline"}</span>
+      <div className="drawing-tools"><span>{anchor ? "Anchored to a real surface · it'll be placed where you drew it" : "Draw the object's outline"}</span>
         <button type="button" disabled={!strokes.current.length} onClick={() => { strokes.current.pop(); refreshAnchor(); }}>Undo stroke</button>
         <button type="button" disabled={!strokes.current.length} onClick={() => { strokes.current = []; refreshAnchor(); }}>Clear</button>
         <button type="button" onClick={onCancel}>Cancel <kbd>Esc</kbd></button>
       </div>
       <div className="composer-row"><input aria-label="Describe your object" placeholder="What are you imagining? A faceted ceramic pot…" value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} required />
         <button className="primary" disabled={blocked || !anchor || !description.trim()} type="submit">{blocked ? "Sending drawing…" : "Create in room"} <span>↗</span></button></div>
-      <p role="status" className={error || errorMessage ? "error-text" : "hint"}>{errorMessage || error || "Image → color GLB → click to place · Keep exploring while it builds."}</p>
+      <p role="status" className={error || errorMessage ? "error-text" : "hint"}>{errorMessage || error || "Image → color GLB → placed where you drew it · Keep exploring while it builds."}</p>
     </form>
   </div>;
 }

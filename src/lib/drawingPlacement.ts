@@ -2,10 +2,16 @@ import { Box3, Euler, Matrix4, PerspectiveCamera, Quaternion, Raycaster, Vector2
 import { orientTo, pickSurface, type PickSource } from "./surfacePick.ts";
 
 export type Point = { x: number; y: number };
+export type Stroke = { points: Point[]; width: number };
 export type DrawingBounds = { left: number; top: number; right: number; bottom: number };
 export type DrawingAnchor = {
   position: number[]; rotation: number[]; source: PickSource;
   bounds: DrawingBounds; cameraWorld: number[]; projection: number[];
+  // The ink itself, in the same 0..1 top-left space the canvas records. Klein re-poses the
+  // object into a centred three-quarter product view, so the cutout remembers nothing about
+  // how it was drawn — these strokes are the only record of the drawn viewpoint, and what
+  // sketchOrientation matches the generated mesh's silhouette against.
+  strokes: Stroke[];
 };
 /** The size the sketch implies, plus the anchor pose it was measured against. */
 export type DrawingFit = { position: number[]; rotation: number[]; targetSize: number; scale: number };
@@ -21,18 +27,50 @@ export function drawingBounds(strokes: { points: Point[] }[]): DrawingBounds | n
   return bounds.right - bounds.left >= .008 && bounds.bottom - bounds.top >= .008 ? bounds : null;
 }
 
-// The bottom centre of the drawing is the object's contact point. Never invent a depth:
+/** Fraction of the drawing's height treated as "the base" when locating the contact point. */
+const BASE_BAND = .12;
+
+/**
+ * Where the object actually touches the room. Averaging the ink across the bottom band beats
+ * the bounding box's bottom-centre: one sloppy diagonal tail widens the box and drags that
+ * corner sideways, while the mass of ink resting on the table does not move.
+ */
+export function contactPoint(strokes: Stroke[], bounds: DrawingBounds): Point {
+  const cutoff = bounds.bottom - BASE_BAND * (bounds.bottom - bounds.top);
+  const base = strokes.flatMap((s) => s.points).filter((p) => p.y >= cutoff);
+  if (!base.length) return { x: (bounds.left + bounds.right) / 2, y: bounds.bottom };
+  return { x: base.reduce((sum, p) => sum + p.x, 0) / base.length, y: bounds.bottom };
+}
+
+/** The anchor rides through localStorage as JSON, so keep the ink to a sane size. */
+const MAX_POINTS = 600;
+export function decimate(strokes: Stroke[], max = MAX_POINTS): Stroke[] {
+  const total = strokes.reduce((n, s) => n + s.points.length, 0);
+  if (total <= max) return strokes;
+  const step = Math.ceil(total / max);
+  return strokes.map((s) => ({
+    ...s,
+    // Endpoints always survive: they are what closes an outline.
+    points: s.points.filter((_, i) => i % step === 0 || i === s.points.length - 1),
+  }));
+}
+
+// The base of the drawing is the object's contact point. Never invent a depth:
 // only the room collider or a real splat hit can establish this anchor.
-export function anchorDrawing(bounds: DrawingBounds, camera: PerspectiveCamera, scene: Object3D): DrawingAnchor {
+export function anchorDrawing(strokes: Stroke[], camera: PerspectiveCamera, scene: Object3D): DrawingAnchor {
+  const bounds = drawingBounds(strokes);
+  if (!bounds) throw new Error("Draw an outline first.");
   scene.updateMatrixWorld(true);
   camera.updateMatrixWorld(true);
-  const pointer = new Vector2(bounds.left + bounds.right - 1, 1 - 2 * bounds.bottom);
+  const base = contactPoint(strokes, bounds);
+  const pointer = new Vector2(2 * base.x - 1, 1 - 2 * base.y);
   const hit = pickSurface(new Raycaster(), camera, pointer, scene, { collider: true, splat: true, plane: false });
   if (!hit || hit.point.distanceTo(camera.position) > 50) throw new Error("No nearby room surface at the base of your drawing. Draw with the bottom touching a table, floor or wall.");
   const normal = hit.source === "splat" || hit.normal.y > .65 ? new Vector3(0, 1, 0) : hit.normal;
   const euler = new Euler().setFromQuaternion(orientTo(normal, hit.point, camera));
   return { bounds, position: hit.point.toArray(), rotation: [euler.x, euler.y, euler.z], source: hit.source,
-    cameraWorld: camera.matrixWorld.toArray(), projection: camera.projectionMatrix.toArray() };
+    cameraWorld: camera.matrixWorld.toArray(), projection: camera.projectionMatrix.toArray(),
+    strokes: decimate(strokes) };
 }
 
 export function cameraForAnchor(anchor: DrawingAnchor) {
