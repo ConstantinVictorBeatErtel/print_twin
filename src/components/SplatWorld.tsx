@@ -9,9 +9,9 @@ import * as THREE from "three";
 export function SparkSetup() {
   const { gl, scene } = useThree();
   useEffect(() => {
-    const spark = new SparkRenderer({ renderer: gl });
+    const spark = new SparkRenderer({ renderer: gl, lodSplatCount: 500_000, lodRenderScale: 1.5, maxStdDev: Math.sqrt(5), sortRadial: true });
     scene.add(spark);
-    return () => { scene.remove(spark); };
+    return () => { scene.remove(spark); spark.dispose(); };
   }, [gl, scene]);
   return null;
 }
@@ -24,7 +24,7 @@ export function SplatWorld({ url, metricScale = 1, groundOffset = 0, minRaycastO
   useEffect(() => {
     // raycastable: lets Spark answer "what splat is under the cursor?" when a world ships
     // without a collider GLB. Approximate, but it keeps placement working.
-    const m = new SplatMesh({ url, raycastable: true, minRaycastOpacity });
+    const m = new SplatMesh({ url, lod: true, raycastable: true, minRaycastOpacity });
     m.userData.splat = true;
     setMesh(m);
     return () => { setMesh(null); m.dispose?.(); };

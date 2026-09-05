@@ -1,5 +1,8 @@
 # Print the World
 
+> **Working local drawing-to-3D viewer:** `npm ci` → `npm run dev:local` → open [localhost:5174/local.html](http://127.0.0.1:5174/local.html). Use the gear icon to enter your fal and Tripo keys. The room and pipeline are included; no Convex setup is needed. See [Draw directly into the placement viewer](#draw-directly-into-the-placement-viewer).
+
+
 Capture the room you are standing in, explore a generated 3D version of it, sketch
 objects into your view, and prepare what you like for a physical 3D print.
 Product architecture and scope decisions are in [HACKATHON_PLAN.md](HACKATHON_PLAN.md).
@@ -144,6 +147,34 @@ removing it. This local CLI is not yet a shared job queue.
 
 ## Run the web app
 
+### Local room placement editor
+
+`npm run dev:local` opens a server at `http://127.0.0.1:5174`; visit
+`/local.html` for the full-resolution room and local object placement, without
+Convex or API keys. `npm run build:local` checks and builds this entry point into
+`dist-local`. The existing Convex application remains at the normal root entry.
+
+This checkout has the verified `stage-rear-2026-09-05` release's
+`assets/splat-full_res.spz` and `assets/collider.glb` under `public/room/`, plus the generated pot at `public/models/plantpot.glb`. These three runtime assets are included in this branch; capture manifests and generated job outputs stay local.
+
+- Import self-contained `.glb` files, or choose **Place** beside the supplied pot.
+- Move the cursor over the room to preview placement; click to commit. Scroll to
+  resize, set a rotation in the panel, and press Esc or right-click to cancel.
+- Select placed objects in the list or scene to move, resize, rotate, adjust
+  position, place another instance, or remove them. Undo and redo cover placements
+  and edits in the current session. Moving preserves the object's size and rotation.
+- Objects and imported model files are saved in this browser's IndexedDB for this
+  room and restored after reload. Keep the same origin/port; clearing browser site
+  data removes these local scenes. Saving failures are displayed in the panel.
+- Click to capture the mouse for 360° looking; H releases it. WASD/arrows walk, Q/E change elevation, and Shift speeds up movement.
+
+Placement prefers the room collider and falls back to splat raycasting. No guessed
+ground plane is used. **Surface inspection** reveals the collider wireframe to
+check alignment. Coordinates and object sizes use the original room units; this
+is visual placement, with no collision or physical calibration. Local drawing generation uses the Settings keys. Multiplayer uses the separate Convex application below.
+
+### Convex application
+
 ```sh
 npx convex dev            # login, creates deployment, writes .env.local (VITE_CONVEX_URL)
 npx convex env set WLT_API_KEY <key>
@@ -175,3 +206,38 @@ insufficient credits, provider failures, and ambiguous submission handling. The
 verifier checks saved checksums, SPZ headers (and gzip CRC for legacy files), GLB
 structure, and image decoding. Capture assessment and source links:
 [docs/CAPTURE_REVIEW.md](docs/CAPTURE_REVIEW.md).
+
+
+## Draw directly into the placement viewer
+
+This branch includes the room splat, collider, starter model and full generation server. No parent workspace is required. Use Node **22.18+** (or Node 24):
+
+```sh
+npm ci
+npm run dev:local
+```
+
+Open **http://127.0.0.1:5174/local.html**, then click the gear icon for **Settings**. Enter **FAL_KEY** (fal images/background removal) and **TRIPO_API_KEY** (Tripo color models). Tripo CLI login can supply the Tripo key instead. No OpenAI, World Labs, Mint, Anthropic or Convex key is needed for this local viewer with its bundled room. Those services belong to the optional capture CLI / multiplayer app described elsewhere in this README.
+
+Settings save immediately to `.local/api-keys.json` on the local server with owner-only file permissions. They are not encrypted at rest; protect access to this computer. The file, `.env.local`, generated jobs, and outputs are ignored by Git. The browser receives only configured/missing status; input values are cleared after save. Leave a field blank to preserve its key, or choose **Remove saved key** to return to an environment/CLI fallback. Local settings override server environment values; `.env.local` is also supported and requires a server restart when edited manually. Saving through the modal requires no restart or generation request.
+
+The settings endpoint accepts only same-origin requests on loopback. This is a single-user local server, not a hosted multi-user credential service; keep the provided localhost binding. Both dev and `npm run preview:local` supply the generation API. `npm run build:local` produces the viewer build. A static host alone cannot run generation.
+
+Generation code and results now live at `server/asset-pipeline.js` and `asset-output/` inside this repository.
+
+1. Click the room to capture and hide the mouse for continuous 360° turning; use WASD / arrows to walk, Q/E to fly and Shift to move faster.
+2. Press **H** to release the mouse (or **Esc**), then **Draw an object**. Drawing freezes navigation and overlays the exact current view.
+3. Sketch the object with its bottom touching a table, floor or wall. The green dot identifies the contact point; no generation starts without a real room/splat surface hit.
+4. Describe the object and choose **Create in room**. The fast Klein → background removal → Tripo P1 pipeline runs in the background. Press H or click **Resume look** to recapture the mouse and explore while waiting. Browser pointer lock needs this click/key gesture; drawing and placement release it automatically.
+5. As soon as the GLB is available, mouse look pauses and the object enters the placement preview in your hand, before STL export finishes. Move over a room surface and click to place; scroll to resize or Esc/right-click to cancel. Cancelled previews remain in the model library. Color GLB and geometry-only 100 mm print-height STL downloads appear in the result card. **Objects** opens import, Place, selection, transforms, undo and redo.
+
+The sketch's bottom-centre ray, saved camera projection and generated mesh bounds suggest an initial size. Final position comes from the surface under the cursor when you click, using the existing upright/rotation placement controls. A single drawing cannot uniquely specify depth: accuracy follows the reconstructed collider (or approximate splat fallback), and the model's proportions determine its final silhouette. Move/scale controls remain available for adjustment.
+
+Model blobs and scene placements persist in IndexedDB. The generation ID, camera and anchor are saved before submission; a reload reconnects by ID and never submits another paid generation. Network failures expose Reconnect; saved provider tasks expose Resume task. Dismiss recovery stops tracking that result, not server-side generation. A completed model is added to the library only once. Generation completion does not change placements or undo history; only clicking the preview places an instance. Reloaded library models can be picked up again with Place.
+
+Performance: fixed 1× display resolution, 500k visible splat LOD budget from the full-resolution room, paused 3D rendering during drawing, capped snapshot dimensions, 500 ms status polling, immediate GLB placement preview and standard color textures on P1 with extra PBR maps disabled. Generation time varies by provider load. The earlier geometry-only annotated-pot test on 2026-09-05 finished in approximately 13 seconds (not a promise for textured generation), with placement, download links and undo/redo verified.
+
+Validation: `npm test` covers API settings, the generation API, GLB color preservation, surface anchoring, captured-camera fitting, persistence and undo/redo; `npm run build:local` type-checks and builds the placement viewer. `vite preview --config vite.local.config.ts` inside `github-main` serves the built local viewer and the same API; a static file host alone does not provide generation endpoints.
+
+
+Color preservation: new jobs generate standard image-aligned textures and retain the finished GLB unchanged. Scene models and the root viewer preview use the original embedded materials. The model library also exposes GLB downloads after reload. STL remains a separate no-color print derivative. Existing gray objects remain gray. Research and implementation notes: [COLOR_PIPELINE.md](COLOR_PIPELINE.md).

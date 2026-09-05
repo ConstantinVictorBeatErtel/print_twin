@@ -3,15 +3,22 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "world": "node scripts/world.mjs",
     "test": "node --test",
     "dev": "concurrently \"npx convex dev\" \"vite\"",
     "dev:web": "vite",
+    "dev:local": "vite --config vite.local.config.ts --host 127.0.0.1",
+    "build:local": "tsc --project tsconfig.local.json && vite build --config vite.local.config.ts",
     "dev:convex": "npx convex dev",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "image:glb": "node scripts/image-to-stl.mjs",
+    "preview:local": "vite preview --config vite.local.config.ts --host 127.0.0.1",
+    "image:stl": "node scripts/image-to-stl.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.0",
@@ -20,7 +27,8 @@
     "convex": "^1.40.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "three": "^0.180.0"
+    "three": "^0.180.0",
+    "pngjs": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
