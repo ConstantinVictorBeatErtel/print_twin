@@ -65,6 +65,14 @@ the hall from the demo stage.
 [download its full assets and cleaned inputs](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-room-2026-09-05),
 or read the [generation and quality record](docs/STAGE_WORLD_RESULT.md).
 
+The latest version adds three cleaned rear-stage photos, completing an eight-view
+reconstruction with the screen, cabinet, exit sign and plants behind the stage.
+[Open the updated room](https://marble.worldlabs.ai/world/262dd7ba-d156-46a1-8445-f62bc60e1265),
+[download full assets and all inputs](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-rear-2026-09-05),
+or read the [rear capture and quality record](docs/STAGE_REAR_UPDATE.md).
+No people are visible in its panorama; physical calibration and browser navigation
+remain unverified.
+
 The CLI waits up to 20 minutes by default. `--wait 0` submits and checks once;
 `resume` continues polling/downloading using the saved operation, without creating
 another world. `--poll` accepts 1–60 seconds. A completed job exits immediately.
