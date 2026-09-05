@@ -136,7 +136,7 @@ body,
 .world-app button:disabled { cursor: not-allowed; }
 .world-error { display: grid; place-items: center; padding: 24px; }
 .world-canvas { position: relative; min-width: 0; height: 100%; }
-.world-render-status { position: absolute; inset: 0; background: #0b0d10; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.world-render-status { position: absolute; inset: 0; z-index: 4; background: #0b0d10; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .entry-secondary { margin-top: 14px; background: transparent; border: 0; color: var(--accent); cursor: pointer; font: inherit; }
 .open-existing-app { position: fixed; bottom: 12px; right: 16px; border: 1px solid #555; border-radius: 8px; background: #111; color: var(--fg); padding: 10px; cursor: pointer; }
 @media (max-width: 700px) {

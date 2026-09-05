@@ -9,6 +9,7 @@ import { Asset } from "./components/Asset";
 import { PlacementGhost, type GhostState } from "./components/PlacementGhost";
 import { DebugPanel, DEBUG_DEFAULTS, type DebugSettings } from "./components/DebugPanel";
 import { Players } from "./components/Players";
+import { DrawOverlay } from "./components/DrawOverlay";
 import { getSessionId, randomColor } from "./lib/session";
 import { ConvexProjectClient } from "./lib/ConvexProjectClient";
 
@@ -32,6 +33,8 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const placements = useQuery(api.assets.placementsInRoom, { room }) ?? [];
   const genWorld = useAction(api.worlds.generateFromText);
   const genAsset = useAction(api.assets.generateFromText);
+  const genFromDrawing = useAction(api.assets.generateFromDrawing);
+  const uploadUrl = useMutation(api.worlds.generateUploadUrl);
   const place = useMutation(api.assets.place);
   const clearRoom = useMutation(api.assets.clearRoom);
   const join = useMutation(api.players.join);
@@ -44,9 +47,28 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const [ghost, setGhost] = useState<GhostState>(null);
   const [cfg, setCfg] = useState<DebugSettings>(DEBUG_DEFAULTS);
   const [zipStatus, setZipStatus] = useState<string | null>(null);
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawBusy, setDrawBusy] = useState(false);
   const zipInput = useRef<HTMLInputElement>(null);
   const [readyUrl, setReadyUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState('');
+
+  // Preserve the original sketch -> PNG -> Convex storage -> Tripo flow.
+  async function submitDrawing(png: Blob) {
+    setDrawBusy(true);
+    try {
+      const url = await uploadUrl();
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: png });
+      if (!res.ok) throw new Error(`drawing upload failed (${res.status})`);
+      const { storageId } = await res.json();
+      await genFromDrawing({ storageId });
+      setDrawMode(false);
+    } catch (e: unknown) {
+      alert(`drawing failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setDrawBusy(false);
+    }
+  }
 
   const selectWorld = (id: string) => {
     setActiveWorld(id);
@@ -104,7 +126,8 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
 
         <h3>Objects (Tripo)</h3>
         <input value={assetPrompt} onChange={(e) => setAssetPrompt(e.target.value)} style={{ width: "100%" }} />
-        <button onClick={() => genAsset({ prompt: assetPrompt, model: "P1-20260311" })}>Generate (P1)</button>
+        <button onClick={() => genAsset({ prompt: assetPrompt, model: "P1-20260311" })}>Generate (P1)</button>{" "}
+        <button onClick={() => setDrawMode((v) => !v)}>{drawMode ? 'stop drawing' : 'draw an object'}</button>
         <ul>{assets.map((a) => (
           <li key={a._id}>{a.prompt.slice(0, 30)} · {a.status}{" "}
             {a.status === "ready" && a.glbUrl && (
@@ -165,8 +188,9 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
           {joined && <Players room={room} sessionId={sessionId} />}
           {!world && <Environment preset="city" />}
         </Suspense>
-        <OrbitControls makeDefault target={[0, 1.6, -1]} />
+        <OrbitControls makeDefault target={[0, 1.6, -1]} enabled={!drawMode} />
       </Canvas>
+      <DrawOverlay active={drawMode} busy={drawBusy} onSubmit={submitDrawing} />
       {(loadError || (world?.splatUrl && readyUrl !== world.splatUrl)) && <div className="world-render-status" role={loadError ? 'alert' : 'status'}>
         <p>{loadError || 'Opening world…'}</p>
         {loadError && <button onClick={() => location.reload()}>Reload world</button>}
