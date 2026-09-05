@@ -2,7 +2,9 @@
 
 ## Current decision
 
-Latest user update, September 5, 2026: the user supplied a new 25.19-second stage-view video and five photos (IMG_6885–IMG_6890) and explicitly requested proceeding if the assets were suitable. Inspection accepted the set and supersedes the earlier generation hold. Five cleaned stills were created with built-in imagegen and submitted in multi-image reconstruction mode. The new **demo-stage** world `82f39764-5224-4574-8328-8a747f42ed3e` completed successfully; no people are visible in its panorama/thumbnail. See [stage capture and generation record](STAGE_WORLD_RESULT.md).
+The user subsequently supplied three rear-stage photos (`IMG_6891`–`IMG_6893`) and authorized updating the room if adequate. They were accepted and cleaned, including human reflections in the screen. An eight-image reconstruction is recorded in [STAGE_REAR_UPDATE.md](STAGE_REAR_UPDATE.md); it adds rear photographic coverage while preserving the previous world as a separate version. Combined inputs and both sets of cleanup prompts/hashes live under `data/captures-stage-complete/` and are included in the updated release.
+
+Earlier stage capture, September 5, 2026: the user supplied a new 25.19-second stage-view video and five photos (IMG_6885–IMG_6890) and explicitly requested proceeding if the assets were suitable. Inspection accepted the set and supersedes the earlier generation hold. Five cleaned stills were created with built-in imagegen and submitted in multi-image reconstruction mode. The new **demo-stage** world `82f39764-5224-4574-8328-8a747f42ed3e` completed successfully; no people are visible in its panorama/thumbnail. See [stage capture and generation record](STAGE_WORLD_RESULT.md).
 
 The original room `b7fc3a55-8fc1-4ef0-8ac8-705c3abe7d5a` remains available and contains people. Its files are preserved separately from the stage version.
 
