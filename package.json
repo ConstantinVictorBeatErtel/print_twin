@@ -5,6 +5,8 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "world": "node scripts/world.mjs",
+    "web": "npm --prefix web run dev",
+    "mobile": "npm --prefix mobile start",
     "test": "node --test"
   }
 }

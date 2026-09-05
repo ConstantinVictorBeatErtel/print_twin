@@ -1,6 +1,41 @@
 # Print the World
 
-The first implementation is a local World Labs capture-to-world pipeline. The product architecture is in [HACKATHON_PLAN.md](HACKATHON_PLAN.md). The website, Convex persistence, sketching, object generation, and printing are later stages.
+The first implementation is a local World Labs capture-to-world pipeline plus a laptop/phone room viewer. The product architecture is in [HACKATHON_PLAN.md](HACKATHON_PLAN.md). Convex persistence, AI object generation, and printing are later stages.
+
+## Website
+
+### Capture entry flow
+
+The web app opens on a small capture screen. Choose one photo or video (or use the phone's native camera buttons), then select **Create my world**. The Vite server saves the upload, starts the existing World Labs CLI with `marble-1.1-plus`, and exposes the persisted job at `/api/capture/:job`. The browser polls that job through uploading, generating, and opening states, then enters the generated room at `/?job=<job>`.
+
+The capture endpoint is a local development seam: the World Labs key stays server-side in `.env.local`, and the generated job plus downloaded assets stay under ignored `data/` paths. It intentionally supports one image or one video so the entry path stays small.
+
+The underlying viewer still supports the checked-in demo world at `data/worlds/hackathon-room-video-01` when opened with `/?job=hackathon-room-video-01`.
+
+```sh
+cd web && npm install && npm run dev
+# or from repo root: npm run web
+```
+
+Open `http://localhost:5173`. Click the canvas to look, WASD to move, Q/E for up/down, then **Draw** to freeze the view and sketch. Phone layout (100k splat, touch look + joystick): `http://localhost:5173/m` or `http://<lan-ip>:5173/m`.
+
+If the world is missing, the UI shows: generate it with `npm run world -- resume --job hackathon-room-video-01`.
+
+## iPhone (Expo shell)
+
+The native app is an Expo WKWebView around the phone web layout at `/m`. Spark cannot run in React Native; do not put `three` or `@sparkjsdev/spark` in `mobile/`.
+
+1. On the laptop, start the website with LAN bind (`npm run web` already uses `server.host: true`).
+2. Find the laptop IP: `ipconfig getifaddr en0`.
+3. Phone and laptop on the same Wi-Fi.
+4. Start Expo:
+
+```sh
+cd mobile && npm install && npx expo start
+# or from repo root: npm run mobile
+```
+
+5. Open in Expo Go and set the viewer URL to `http://<lan-ip>:5173/m` (not `localhost` — that is the phone itself). App Transport Security allows LAN HTTP for this demo.
 
 ## Setup
 
