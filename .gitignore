@@ -1,10 +1,24 @@
+# secrets
 .env
 .env.*
 !.env.example
-data/
+
+# dependencies / build
 node_modules/
+dist/
 __pycache__/
+
+# generated
+convex/_generated
+data/
+
+# local capture + world working files
 .DS_Store
+
+# vendored agent skills (re-install with `npx convex ai-files install`)
+.claude/
+.agents/
+skills-lock.json
 web/dist/
 mobile/.expo/
 mobile/dist/
