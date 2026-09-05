@@ -9,7 +9,8 @@
 // Marble collider, reads the real triangle normal, and `orientTo` stands the object on
 // it. That is the part that makes objects land on tables instead of floating.
 import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
+import * as THREE from "three";
 import { useAction, useConvex, useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
@@ -20,9 +21,11 @@ import { Walk, type MouseLook } from "./components/LocalWalk";
 import { Players } from "./components/Players";
 import { DebugPanel, DEBUG_DEFAULTS, type DebugSettings } from "./components/DebugPanel";
 import { DrawingBridge, DrawingLayer, type DrawingCapture, type DrawingRequest } from "./components/DrawingLayer";
+import { SketchGhost } from "./components/SketchGhost";
 import { SketchSolver, type SolveSketchYaw } from "./components/SketchSolver";
 import { fitDrawing, type DrawingAnchor } from "./lib/drawingPlacement";
 import { composeYaw } from "./lib/sketchOrientation";
+import { pickSurface } from "./lib/surfacePick";
 import { usePlacementHistory, type PlacementInput } from "./lib/placementHistory";
 import { ConvexProjectClient } from "./lib/ConvexProjectClient";
 import { getSessionId, randomColor } from "./lib/session";
@@ -32,6 +35,8 @@ import { glbToStl, downloadBlob, safeFilename, PRINT_HEIGHT_MM } from "./lib/stl
 // or on a real splat hit, so a miss places nothing rather than guessing a depth.
 const SURFACES = { collider: true, splat: true, plane: false };
 const ANCHOR_KEY = "galatea-sketch-anchor-v1";
+// Above this the stroke cutout is dropped from localStorage rather than risking the quota.
+const STROKE_BUDGET = 1_500_000;
 const STAGES = [
   ["image", "Image"],
   ["cutout", "Cutout"],
@@ -102,7 +107,9 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const [previewReady, setPreviewReady] = useState(false);
   const [reset, setReset] = useState(0);
   const [yaw, setYaw] = useState(0);
-  const [upright, setUpright] = useState(true);
+  // Set when something asked for first-person control back; the request itself has to wait
+  // for the next render (see the effect below).
+  const [wantLook, setWantLook] = useState(false);
   const [wireframe, setWireframe] = useState(false);
   const [error, setError] = useState("");
   const [joined, setJoined] = useState(false);
@@ -116,7 +123,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
 
   // The sketch job we are watching. Kept with its anchor so a reload can still turn the
   // finished mesh into a size estimate without resubmitting anything.
-  const [job, setJob] = useState<{ assetId: Id<"assets">; anchor: DrawingAnchor; startedAt: number } | null>(() => {
+  const [job, setJob] = useState<{ assetId: Id<"assets">; anchor: DrawingAnchor; startedAt: number; strokeImage?: string } | null>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(ANCHOR_KEY) || "null");
       if (saved?.assetId && saved.anchor?.cameraWorld?.length === 16 && saved.anchor?.projection?.length === 16
@@ -153,6 +160,11 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
     setYaw(0); setGhost(null); setPreviewReady(false); setError("");
   }, [placements]);
 
+  /** Clicking an object in the room drops straight into the placement UI, with its own pose. */
+  const editPlacement = useCallback((p: PlacementDoc) => {
+    if (p.glbUrl) arm(p.assetId, p.glbUrl, p._id);
+  }, [arm]);
+
   // --- the sketch job -------------------------------------------------------
   useEffect(() => {
     if (!job || jobAsset?.status !== "generating") return;
@@ -168,8 +180,8 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   // against the collider when the drawing was made — it only ever needed to be used. What the
   // anchor cannot know is which way round the object faces, because Klein re-poses the cutout
   // into a centred product view; SketchSolver recovers that by matching rendered silhouettes
-  // against the user's ink. A symmetric object has no answer to recover, so it keeps orientTo's
-  // face-the-camera yaw rather than snapping to a coin-flip.
+  // against the user's ink. A symmetric object has no answer to recover, so it keeps the yaw
+  // orientOnSurface already gave it rather than snapping to a coin-flip.
   useEffect(() => {
     if (!job || !jobAsset || jobAsset.status !== "ready" || !jobAsset.glbUrl) return;
     if (placedJobs.current.has(jobAsset._id)) return;
@@ -230,9 +242,14 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       };
       const [imageStorageId, cleanStorageId] = await Promise.all([store(request.image), store(request.cleanImage)]);
       const assetId = await startSketch({ imageStorageId, cleanStorageId, description: request.description });
-      const next = { assetId, anchor: request.anchor, startedAt: Date.now() };
-      localStorage.setItem(ANCHOR_KEY, JSON.stringify(next));
-      setJob(next); setElapsed(0); setDrawing(null); setFacing(null);
+      const next = { assetId, anchor: request.anchor, startedAt: Date.now(), strokeImage: request.strokeImage };
+      // The cutout is only a visual placeholder: if it will not fit, keep the job and lose the
+      // hanging sketch on reload rather than failing the whole submission. The anchor's own
+      // strokes are polylines and cost little, so auto-placement survives either way.
+      try {
+        localStorage.setItem(ANCHOR_KEY, JSON.stringify(next.strokeImage.length > STROKE_BUDGET ? { ...next, strokeImage: undefined } : next));
+      } catch { /* quota: the anchor alone still recovers the job */ }
+      setJob(next); setElapsed(0); setDrawing(null); setFacing(null); resumeWalking();
     } catch (e) {
       setError(`Could not start generation: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -248,29 +265,28 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   }
 
   // --- room controls --------------------------------------------------------
-  const toggleLook = useCallback(() => {
-    cancel();
-    if (paused) { setError(""); setPaused(false); mouseLookRef.current?.capture(); }
-    else { mouseLookRef.current?.release(); setPaused(true); }
-  }, [cancel, paused]);
+  const resumeWalking = useCallback(() => { setError(""); setPaused(false); setWantLook(true); }, []);
 
+  // Pointer lock can only be requested once <Walk> has re-rendered with enabled={!drawing};
+  // asking in the same tick as setDrawing(null) is silently refused. The H keydown's transient
+  // activation still covers the request one effect later.
   useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.code !== "KeyH" || e.repeat || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || drawing) return;
-      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
-      e.preventDefault();
-      toggleLook();
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [drawing, toggleLook]);
+    if (drawing || !wantLook) return;
+    setWantLook(false);
+    // A slow upload can outlast the click that started it. Asking anyway would only earn a
+    // "mouse capture was unavailable" toast; leave the cursor free and let a click re-lock.
+    if (navigator.userActivation && !navigator.userActivation.isActive) return;
+    mouseLookRef.current?.capture();
+  }, [drawing, wantLook]);
 
-  const beginDrawing = () => {
+  const beginDrawing = useCallback(() => {
     if (!captureRef.current) return;
     cancel(); setPaused(true); setError("");
     try { setDrawing(captureRef.current()); }
     catch (e) { setError(`Could not capture the room: ${String(e)}`); }
-  };
+  }, [cancel]);
+
+  const leaveDrawing = useCallback(() => { setDrawing(null); resumeWalking(); }, [resumeWalking]);
 
   const selectWorld = (id: string) => {
     setActiveWorld(id); setJoined(false); setRoomReady(false); setError("");
@@ -315,14 +331,34 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const jobPlaced = Boolean(jobAsset && placements.some((p) => p.assetId === jobAsset._id));
   const jobInHand = Boolean(jobAsset && armed?.assetId === jobAsset._id);
   const roomStatus = error ? error : roomReady ? "Ready" : world?.splatUrl ? "Loading room…" : "No room loaded";
+  const canDraw = roomReady && !submitting && !generating;
+
+  // H is the whole mode switch: walking or drawing, nothing in between. The panel is still one
+  // Esc away, because the browser drops pointer lock on Escape by itself.
+  const toggleDrawMode = useCallback(() => {
+    if (drawing) { leaveDrawing(); return; }
+    if (!canDraw) return;
+    beginDrawing();
+  }, [beginDrawing, canDraw, drawing, leaveDrawing]);
+
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.code !== "KeyH" || e.repeat || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      e.preventDefault();
+      toggleDrawMode();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [toggleDrawMode]);
 
   return <div className="local-editor">
     <header className="viewer-toolbar" inert={!!drawing}>
       <div className="brand"><span className="brand-mark">✳</span><div>Galatea<small>Your room, reimagined</small></div></div>
       <nav aria-label="Room controls">
-        <button className={paused ? "is-active" : ""} aria-pressed={paused} disabled={!!drawing} onClick={toggleLook}>{paused ? "Resume look" : "Pause look"} <kbd>H</kbd></button>
-        <button className="primary" disabled={!!drawing || submitting || generating || !roomReady}
-          title={roomReady ? "Sketch an object into the room" : roomStatus} onClick={beginDrawing}>Draw an object <span>＋</span></button>
+        <button disabled={!!drawing || !paused} onClick={() => { cancel(); resumeWalking(); }}>Resume look</button>
+        <button className="primary" disabled={!!drawing || !canDraw}
+          title={roomReady ? "Sketch an object into the room" : roomStatus} onClick={toggleDrawMode}>Draw an object <kbd>H</kbd></button>
         <button aria-expanded={libraryOpen} aria-controls="object-library" onClick={() => setLibraryOpen((v) => !v)}>Objects <span className="count">{placements.length}</span></button>
       </nav>
     </header>
@@ -339,7 +375,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         {joined ? <span className="save-status">joined</span>
           : <button onClick={async () => { await join({ room, sessionId, name: "me", color: randomColor() }); setJoined(true); }}>Join multiplayer</button>}
       </div>
-      <p className="controls-help">Click room to capture mouse · H to release<br />Q/E down/up · Shift for speed</p>
+      <p className="controls-help">Click room to capture mouse · <kbd>H</kbd> to draw · <kbd>Esc</kbd> for this panel<br />W/A/S/D walk · Q/E down/up · Shift for speed</p>
 
       {error && <div role="alert" className="error">{error}<button aria-label="Dismiss error" onClick={() => setError("")}>×</button></div>}
 
@@ -357,11 +393,11 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
 
       {armed && <section className="placing-panel">
         <div className="section-heading"><h2>{armed.movingId ? "Move object" : "Place object"}</h2><button onClick={cancel}>Cancel</button></div>
-        <p role="status">{!previewReady ? "Loading preview…" : ghost ? `On ${ghost.source === "collider" ? "room surface" : "splat surface"} · size ×${ghost.scale.toFixed(2)}` : "Move the cursor over a room surface"}</p>
-        <p className="hint">Click to place · Scroll to resize<br />Esc / right-click to cancel</p>
+        <p role="status">{!previewReady ? "Loading preview…" : ghost ? `On a ${ghost.kind} · ${ghost.source === "collider" ? "room mesh" : "splat"} · size ×${ghost.scale.toFixed(2)}` : "Move the cursor over a room surface"}</p>
+        <TransformKeys />
         <label className="field">Size <NumberInput label="Preview size" value={armed.targetSize} min={0.02} max={10} step={0.05} onChange={(value) => setArmed({ ...armed, targetSize: value })} /></label>
         <label className="field">Turn <NumberInput label="Preview rotation" value={yaw} min={-360} max={360} step={15} onChange={setYaw} />°</label>
-        {!armed.movingId && <label className="check"><input type="checkbox" checked={upright} onChange={(e) => setUpright(e.target.checked)} />Keep upright</label>}
+        <p className="hint">The object follows whatever is under the cursor: standing on floors and table tops, flat against walls, hanging from ceilings.</p>
       </section>}
 
       <section>
@@ -407,7 +443,12 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       </details>
     </aside>
 
-    <main className="room-canvas" aria-label="3D room">
+    <main className="room-canvas" aria-label="3D room"
+      onPointerDown={(e) => {
+        // Clicking the room is how you get back to walking. <Walk> cannot do this itself:
+        // its `paused` also covers placement, where a click must place rather than re-lock.
+        if (e.button === 0 && paused && !armed && !drawing && e.target instanceof HTMLCanvasElement) resumeWalking();
+      }}>
       <Canvas frameloop={drawing ? "never" : "always"} dpr={1} gl={{ antialias: false }} camera={{ position: [0, 1.6, 0], fov: 65, near: 0.02, far: 500 }}>
         <SparkSetup />
         <DrawingBridge captureRef={captureRef} />
@@ -422,16 +463,24 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         </Suspense></ColliderBoundary>}
         {!world && <gridHelper args={[20, 20]} />}
         {placements.filter((p) => p.glbUrl && p._id !== armed?.movingId).map((p) =>
-          <Asset key={p._id} url={p.glbUrl!} position={p.position} rotation={p.rotation} scale={p.scale} targetSize={p.targetSize}
-            onClick={armed || !paused || drawing ? undefined : () => { setSelected(p._id); setLibraryOpen(true); }} onError={setError} />)}
+          // The id rides on a wrapper group so the crosshair can find the placement it hit.
+          <group key={p._id} userData={{ placementId: p._id }}>
+            <Asset url={p.glbUrl!} position={p.position} rotation={p.rotation} scale={p.scale} targetSize={p.targetSize}
+              onClick={armed || !paused || drawing ? undefined : () => editPlacement(p)} onError={setError} />
+          </group>)}
+        <CrosshairPick enabled={!armed && !drawing && mouseLocked}
+          onHit={(id) => { const hit = placements.find((p) => p._id === id); if (hit) editPlacement(hit); }} />
+        {job?.strokeImage && jobAsset && !jobPlaced &&
+          <SketchGhost anchor={job.anchor} image={job.strokeImage} pulse={generating} />}
         {active && !armed && <mesh position={active.position as [number, number, number]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.035, 0.05, 32]} /><meshBasicMaterial color="#98f5ba" depthTest={false} transparent opacity={0.8} />
         </mesh>}
         {armed && <PlacementGhost key={`${armed.assetId}:${armed.movingId ?? "new"}`} url={armed.url} targetSize={armed.targetSize}
-          rotation={placements.find((p) => p._id === armed.movingId)?.rotation}
-          upright={upright} yaw={yaw * Math.PI / 180} pickHz={12} allow={SURFACES}
+          yaw={yaw * Math.PI / 180} pickHz={12} allow={SURFACES}
           opacity={cfg.ghostOpacity} clickSlop={cfg.clickSlop}
           onPreview={setGhost} onReady={() => setPreviewReady(true)}
+          onYawDelta={(radians) => setYaw((degrees) => wrapDegrees(degrees + radians * 180 / Math.PI))}
+          onResetRotation={() => setYaw(0)}
           onError={(message) => { setError(message); cancel(); }} onCancel={cancel}
           onCommit={(position, rotation, scale) => {
             const input: PlacementInput = { assetId: armed.assetId, position, rotation, scale, targetSize: armed.targetSize };
@@ -457,10 +506,10 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       {!drawing && <>
         <div className="canvas-badge"><span className="live-dot" />{roomReady ? "LIVE ROOM" : roomStatus}</div>
         {mouseLocked && <div className="crosshair" />}
-        {!paused && !mouseLocked && <div className="paused-hint">Click the room to explore · H releases the mouse</div>}
-        <div className="walk-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Walk</span><span><kbd>Q</kbd><kbd>E</kbd> Fly</span><span><kbd>Shift</kbd> Faster</span><span><kbd>H</kbd> {paused ? "Resume looking" : "Pause & draw"}</span></div>
-        {paused && !armed && !job && roomReady && <div className="paused-hint">View paused · Draw something into this room</div>}
-        {armed && <div className="paused-hint">Click a room surface to place · Scroll to resize · Esc to cancel</div>}
+        {!paused && !mouseLocked && <div className="paused-hint">Click the room to explore · H to draw</div>}
+        {!armed && <div className="walk-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Walk</span><span><kbd>Q</kbd><kbd>E</kbd> Fly</span><span><kbd>Shift</kbd> Faster</span><span><kbd>H</kbd> Draw</span>{mouseLocked && <span>Click an object to edit</span>}</div>}
+        {paused && !armed && !job && roomReady && <div className="paused-hint">Press H to draw something into this room</div>}
+        {armed && <div className="armed-hud"><strong>{armed.movingId ? "Editing object" : "Placing object"}</strong><TransformKeys /></div>}
         {error && !libraryOpen && <div className="floating-error" role="alert">{error}<button onClick={() => setError("")}>Dismiss</button></div>}
 
         {(job || submitting) && <div className="generation-card" aria-live="polite">
@@ -495,10 +544,58 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
           </div>
         </div>}
       </>}
-      {drawing && <DrawingLayer capture={drawing} onCancel={() => setDrawing(null)} onGenerate={submitDrawing}
+      {drawing && <DrawingLayer capture={drawing} onCancel={leaveDrawing} onGenerate={submitDrawing}
         blocked={submitting || generating} errorMessage={error} />}
     </main>
   </div>;
+}
+
+/** Keeps the Turn field inside the range its number input accepts as Q/E accumulate. */
+function wrapDegrees(degrees: number) {
+  return ((degrees + 180) % 360 + 360) % 360 - 180;
+}
+
+/** The keys that move an armed object. Shown in the panel and over the canvas. */
+function TransformKeys() {
+  return <ul className="key-legend">
+    <li><kbd>Q</kbd><kbd>E</kbd> Turn <small>Shift: fine</small></li>
+    <li><kbd>[</kbd><kbd>]</kbd> Resize <small>or scroll</small></li>
+    <li><kbd>R</kbd> Reset turn</li>
+    <li><kbd>Enter</kbd> / click Place</li>
+    <li><kbd>Esc</kbd> Cancel</li>
+  </ul>;
+}
+
+/**
+ * Left-click while walking edits whatever the crosshair is on, so an object already in the
+ * room is one click from the same UI that placed it — no need to release the mouse first.
+ */
+function CrosshairPick({ enabled, onHit }: { enabled: boolean; onHit: (id: string) => void }) {
+  const { gl, camera, scene } = useThree();
+  const cb = useRef({ enabled, onHit });
+  cb.current = { enabled, onHit };
+  useEffect(() => {
+    const el = gl.domElement;
+    const centre = new THREE.Vector2(0, 0);
+    const click = () => {
+      if (!cb.current.enabled || document.pointerLockElement !== el) return;
+      const targets: THREE.Object3D[] = [];
+      scene.traverse((o) => { if (o.userData.placementId) targets.push(o); });
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(centre, camera);
+      const hit = raycaster.intersectObjects(targets, true)[0];
+      if (!hit) return;
+      // Room geometry in front of the object wins: you cannot edit through a wall.
+      const room = pickSurface(new THREE.Raycaster(), camera, centre, scene, SURFACES);
+      if (room && room.point.distanceTo(camera.position) < hit.distance) return;
+      for (let node: THREE.Object3D | null = hit.object; node; node = node.parent) {
+        if (node.userData.placementId) { cb.current.onHit(node.userData.placementId as string); return; }
+      }
+    };
+    el.addEventListener("click", click);
+    return () => el.removeEventListener("click", click);
+  }, [gl, camera, scene]);
+  return null;
 }
 
 /** `history` is taken by the placement stack, so URL rewrites go through this. */

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as T from "three";
-import { drawingBounds, anchorDrawing, fitDrawing, cameraForAnchor, contactPoint, decimate } from "../src/lib/drawingPlacement.ts";
+import { drawingBounds, anchorDrawing, drawingQuad, fitDrawing, cameraForAnchor, contactPoint, decimate } from "../src/lib/drawingPlacement.ts";
 
 function room() {
   const scene = new T.Scene();
@@ -74,4 +74,26 @@ test("the anchor carries decimated ink, keeping every stroke's endpoints", () =>
   assert.ok(points.length <= 600 && points.length > 100, `kept ${points.length}`);
   assert.deepEqual(points[0], long[0].points[0]);
   assert.deepEqual(points.at(-1), long[0].points.at(-1));
+});
+
+test("the drawn rectangle unprojects back to a quad that still covers it on screen", () => {
+  const { camera, scene } = room();
+  const anchor = anchorDrawing(outline, camera, scene);
+  // Survive the trip through localStorage: the hanging sketch has to come back after a reload.
+  const revived = JSON.parse(JSON.stringify(anchor));
+  const quad = drawingQuad(revived);
+  assert.equal(quad.length, 4);
+  const shot = cameraForAnchor(revived);
+  const want = [
+    [bounds.left, bounds.bottom], [bounds.right, bounds.bottom],
+    [bounds.right, bounds.top], [bounds.left, bounds.top],
+  ];
+  quad.forEach((corner, i) => {
+    const ndc = corner.clone().project(shot);
+    assert.ok(Math.abs(ndc.x - (2 * want[i][0] - 1)) < 1e-6, `corner ${i} x`);
+    assert.ok(Math.abs(ndc.y - (1 - 2 * want[i][1])) < 1e-6, `corner ${i} y`);
+  });
+  // It hangs at the depth the base was anchored to, not at the camera.
+  const base = new T.Vector3().fromArray(anchor.position);
+  for (const corner of quad) assert.ok(corner.distanceTo(base) < 5);
 });

@@ -1,5 +1,6 @@
 import { Box3, Euler, Matrix4, PerspectiveCamera, Quaternion, Raycaster, Vector2, Vector3, type Object3D } from "three";
-import { orientTo, pickSurface, type PickSource } from "./surfacePick.ts";
+import { pickSurface, type PickSource } from "./surfacePick.ts";
+import { orientOnSurface } from "./placementPose.ts";
 
 export type Point = { x: number; y: number };
 export type Stroke = { points: Point[]; width: number };
@@ -66,8 +67,9 @@ export function anchorDrawing(strokes: Stroke[], camera: PerspectiveCamera, scen
   const pointer = new Vector2(2 * base.x - 1, 1 - 2 * base.y);
   const hit = pickSurface(new Raycaster(), camera, pointer, scene, { collider: true, splat: true, plane: false });
   if (!hit || hit.point.distanceTo(camera.position) > 50) throw new Error("No nearby room surface at the base of your drawing. Draw with the bottom touching a table, floor or wall.");
-  const normal = hit.source === "splat" || hit.normal.y > .65 ? new Vector3(0, 1, 0) : hit.normal;
-  const euler = new Euler().setFromQuaternion(orientTo(normal, hit.point, camera));
+  // Same rule as the placement ghost (placementPose.ts), so an anchored sketch and a
+  // hand-placed object never disagree about what counts as a floor.
+  const euler = new Euler().setFromQuaternion(orientOnSurface(hit.normal, hit.point, camera, hit.source));
   return { bounds, position: hit.point.toArray(), rotation: [euler.x, euler.y, euler.z], source: hit.source,
     cameraWorld: camera.matrixWorld.toArray(), projection: camera.projectionMatrix.toArray(),
     strokes: decimate(strokes) };
@@ -80,6 +82,19 @@ export function cameraForAnchor(anchor: DrawingAnchor) {
   camera.projectionMatrix.fromArray(anchor.projection);
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
   return camera;
+}
+
+/**
+ * The four world-space corners of the rectangle the drawing occupied, at the depth its base
+ * was anchored to. Returned bottom-left, bottom-right, top-right, top-left — enough to hang
+ * the sketch in the room exactly where it was drawn while the mesh is still being built.
+ */
+export function drawingQuad(anchor: DrawingAnchor): Vector3[] {
+  const camera = cameraForAnchor(anchor);
+  const depth = new Vector3().fromArray(anchor.position).project(camera).z;
+  const { left, top, right, bottom } = anchor.bounds;
+  return ([[left, bottom], [right, bottom], [right, top], [left, top]] as const)
+    .map(([u, v]) => new Vector3(2 * u - 1, 1 - 2 * v, depth).unproject(camera));
 }
 
 // Match the generated model's projected footprint, accounting for aspect ratio, camera

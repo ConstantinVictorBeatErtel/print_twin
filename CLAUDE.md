@@ -52,31 +52,50 @@ not a second active viewer. A fresh backend needs the saved local assets or a ZI
 neither backend data nor room binaries are in Git.
 
 ## The room viewer (`src/WorldApp.tsx`)
-Navigation is first-person (`LocalWalk.tsx`: pointer lock, WASD/arrows, Q/E, Shift, H to
-release) — there is no OrbitControls. Room geometry, the object library, placements and
-players all come from Convex; nothing is stored in IndexedDB.
+Navigation is first-person (`LocalWalk.tsx`: pointer lock, WASD/arrows, Q/E, Shift) — there
+is no OrbitControls. Room geometry, the object library, placements and players all come from
+Convex; nothing is stored in IndexedDB.
+
+There are two modes and `H` is the whole switch between them: walking and drawing. Escape
+drops pointer lock for the side panel (the browser does that itself); clicking the canvas
+takes it back. `LocalWalk` ignores movement keys while `paused`, because placement rebinds
+Q/E — do not remove that guard.
 
 - Placement: `src/lib/surfacePick.ts` raycasts the Marble collider for a real triangle
-  normal (inverse-transpose normal matrix, flipped toward the camera), falls back to two
-  probe rays against the splat, and `orientTo` stands the object's +Y on that normal.
-  `plane` is disabled — a miss places nothing rather than inventing a depth. Do not
-  "simplify" this; it is what makes objects land on tables.
+  normal (inverse-transpose normal matrix, flipped toward the camera) and falls back to two
+  probe rays against the splat. `plane` is disabled — a miss places nothing rather than
+  inventing a depth. Do not "simplify" this; it is what makes objects land on tables.
+- What that normal *means* is `src/lib/placementPose.ts`: floors stand the object up, walls
+  put its back against them with world-up preserved, ceilings hang it. There is no override
+  and no offset — the object sits exactly on the picked point, on whatever the cursor is over.
+  `poseOnSurface` is called by the ghost preview and by the click that commits it, so the two
+  cannot disagree. Splat normals are noisy, so they only count as a wall below `|n.y| < 0.35`.
+- Editing a placed object *is* placement: clicking one (crosshair while walking, or the free
+  cursor) re-arms it through the same `PlacementGhost` and it re-orients to whatever is under
+  the cursor, like any other placement. Q/E turn, `[`/`]` resize, `R` resets the turn, Enter
+  commits, Esc cancels.
 - Sizes: `fit.ts` normalizes every GLB so its longest dimension is `targetSize` metres and
   its bottom-centre sits at the anchor. `PlacementGhost` and `Asset` run identical maths,
   so a committed object does not jump.
 - Sketching: `DrawingLayer` freezes the frame; `drawingPlacement.ts` raycasts the base of the
-  ink to a real surface, and stores that contact point, the surface-aligned rotation, the
-  camera matrices and the strokes themselves. `fitDrawing` replays the matrices to estimate a
-  size. A finished mesh is then **placed automatically** at the anchor — no click. `arm`/
-  `PlacementGhost` remain for the library's Place button and for Move.
+  ink to a real surface (the centroid of the ink resting on it, not the bounding-box corner)
+  and stores that contact point, the `orientOnSurface` rotation, the camera matrices and the
+  strokes themselves. `fitDrawing` replays the matrices to estimate a size. While the mesh
+  builds, `SketchGhost` hangs the ink alone back in the room on the quad `drawingQuad`
+  unprojects from those same matrices; the cutout rides in the `localStorage` job entry and
+  survives a reload, and over `STROKE_BUDGET` it is dropped rather than risking the quota.
+- A finished mesh is **placed automatically** at its anchor — no click — then selected and
+  pushed onto the undo stack, so the hanging `SketchGhost` (hidden once `jobPlaced`) dissolves
+  into the real object in the same spot. `arm`/`PlacementGhost` remain for the library's Place
+  button, for Move, and as the fallback when no pose can be derived.
 - Sketch orientation: Klein re-poses the cutout into a centred product view, so the only record
   of the drawn viewpoint is the user's ink. `sketchOrientation.ts` (pure, injected renderer)
   rasterizes the strokes and chamfer-matches them against silhouettes of the mesh rendered at a
   sweep of yaws by `SketchSolver.tsx` (one tiled render target, one readback, inside `<Canvas>`
   so it reuses the app's GL context). `alignToBox` scales *uniformly* — the silhouette's aspect
   ratio is the yaw signal, so do not stretch it to fit. When no yaw beats the median by 15% the
-  object is rotationally ambiguous and keeps `orientTo`'s face-the-camera yaw; `composeYaw`
-  post-multiplies so the yaw is about the surface normal, not world up.
+  object is rotationally ambiguous and keeps the face-the-camera yaw. `composeYaw` post-
+  multiplies about the object's own +Y, the same convention as `poseOnSurface`'s manual yaw.
 - Undo/redo is an inverse-operation stack (`src/lib/placementHistory.ts`), not array
   snapshots: placements are shared, so replaying a snapshot would revert other players.
 

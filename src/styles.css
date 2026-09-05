@@ -212,6 +212,14 @@ button.primary:hover:not(:disabled) { background: #e4ffcf; border-color: #e4ffcf
 .walk-hint { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; white-space: nowrap; padding: 10px 16px; background: #121a15d9; border: 1px solid #ffffff17; backdrop-filter: blur(12px); border-radius: 11px; font-size: 10px; color: #c0cabc; pointer-events: none; }
 .walk-hint span { display: flex; align-items: center; gap: 4px; }
 .crosshair { position: absolute; top: 50%; left: 50%; height: 5px; width: 5px; border-radius: 50%; border: 1px solid #fff9; background: #fff4; box-shadow: 0 0 3px #000; pointer-events: none; }
+/* The keys that move an armed object — same list in the side panel and over the canvas. */
+.key-legend { list-style: none; margin: 6px 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 10px; color: #a8b4a7; }
+.key-legend li { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.key-legend small { color: #7d8a7c; }
+.armed-hud { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 16px; background: #121a15d9; border: 1px solid #ffffff17; backdrop-filter: blur(12px); border-radius: 11px; color: #e8eee4; font-size: 11px; pointer-events: none; }
+.armed-hud strong { display: block; margin-bottom: 6px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #d2fbb6; }
+.armed-hud .key-legend { margin: 0; }
+
 .paused-hint { position: absolute; top: 90px; left: 50%; transform: translateX(-50%); color: #e8eee4; background: #182019b8; backdrop-filter: blur(12px); padding: 8px 14px; border-radius: 20px; font-size: 11px; text-align: center; pointer-events: none; }
 .generation-card { position: absolute; bottom: 90px; left: 22px; width: 380px; max-width: calc(100% - 44px); padding: 16px; display: flex; align-items: flex-start; gap: 13px; background: #171e19f2; border: 1px solid #ffffff20; backdrop-filter: blur(20px); box-shadow: 0 12px 40px #0005; border-radius: 16px; font-size: 12px; }
 .generation-card img { width: 60px; height: 60px; border-radius: 8px; object-fit: contain; background: #e7ebdf; }
@@ -253,4 +261,6 @@ button.primary:hover:not(:disabled) { background: #e4ffcf; border-color: #e4ffcf
   .drawing-composer { bottom: 12px; max-width: calc(100% - 24px); } .composer-row { flex-wrap: wrap; } .composer-row input { flex-basis: 100%; } .composer-row button { width: 100%; }
   .drawing-tools > span { font-size: 9px; } .drawing-tools button { font-size: 9px; padding: 4px; }
   .paused-hint { width: max-content; max-width: 90%; top: 75px; }
+  .armed-hud { width: calc(100% - 24px); bottom: 12px; }
+  .armed-hud .key-legend { grid-template-columns: 1fr 1fr; }
 }
