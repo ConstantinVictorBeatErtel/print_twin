@@ -56,9 +56,22 @@ This run completed successfully.
 [Result and quality assessment](docs/FIRST_WORLD_RESULT.md).
 [Download the full room and prepared captures](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/room-capture-2026-09-05).
 The release includes the full-resolution splat and all other returned room assets.
-[Capture-to-world workflow and planned people removal](docs/ROOM_CREATION_WORKFLOW.md).
-The current room contains people; the next version should be unoccupied, and new
-generation is currently on hold at the user's request.
+[Capture-to-world workflow and people removal](docs/ROOM_CREATION_WORKFLOW.md).
+The original room contains people. The user subsequently supplied a stage-view
+capture and authorized proceeding: `hackathon-stage-no-people-01` is complete,
+using five cleaned photos. Its panorama shows no visible people and faces into
+the hall from the demo stage.
+[Open the stage world](https://marble.worldlabs.ai/world/82f39764-5224-4574-8328-8a747f42ed3e),
+[download its full assets and cleaned inputs](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-room-2026-09-05),
+or read the [generation and quality record](docs/STAGE_WORLD_RESULT.md).
+
+The latest version adds three cleaned rear-stage photos, completing an eight-view
+reconstruction with the screen, cabinet, exit sign and plants behind the stage.
+[Open the updated room](https://marble.worldlabs.ai/world/262dd7ba-d156-46a1-8445-f62bc60e1265),
+[download full assets and all inputs](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-rear-2026-09-05),
+or read the [rear capture and quality record](docs/STAGE_REAR_UPDATE.md).
+No people are visible in its panorama; physical calibration and browser navigation
+remain unverified.
 
 The CLI waits up to 20 minutes by default. `--wait 0` submits and checks once;
 `resume` continues polling/downloading using the saved operation, without creating
