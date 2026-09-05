@@ -14,6 +14,15 @@ The capture pipeline and app share a Convex import path:
 `docs/` carries both the capture write-ups and the per-vendor API references.
 See `CLAUDE.md` for the agent-oriented overview.
 
+## High-quality room mesh
+
+The completed stage room now also has a cleaned 16.17-million-triangle vertex-colored
+mesh and a textured mesh, with approximate window-based scale calibration.
+[Download the full HQ meshes and reports](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-hq-mesh-2026-09-05).
+See [the export, cleanup and scale guide](docs/HIGH_QUALITY_MESH.md) for local viewing,
+exact transforms and limitations. These are separate editing assets; the web app
+continues to use its saved splat and collider. The meshes are not yet watertight for printing.
+
 ## Setup
 
 The Galatea entry flow and original viewer now live together in `src/`. Select a
