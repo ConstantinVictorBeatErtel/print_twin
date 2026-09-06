@@ -53,7 +53,7 @@ export function Hud({
 
       <header className="hud-top">
         <div className="hud-brand">
-          <strong>Galatea</strong>
+          <strong>doodleforge</strong>
           {project ? <span className="hud-world">{project.world.displayName}</span> : null}
         </div>
         {project ? (

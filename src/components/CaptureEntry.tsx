@@ -52,7 +52,7 @@ export function CaptureEntry({ onCreate }: { onCreate: () => void }) {
   return <main className="capture-entry">
     <div className="capture-card">
       <div className="capture-mark">◎</div>
-      <p className="capture-kicker">GALATEA</p>
+      <p className="capture-kicker">doodleforge</p>
       <h1>Step inside your space.</h1>
       <p className="capture-copy">Start with a photo, a short video, or a world ZIP.</p>
       <input ref={inputRef} className="capture-input" type="file" aria-label="Choose a capture" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm,.zip,application/zip,application/x-zip-compressed" onChange={(e) => choose(e.target.files?.[0])} />

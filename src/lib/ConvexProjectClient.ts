@@ -93,7 +93,7 @@ export class ConvexProjectClient {
     if (!splat) throw new Error('The saved room has no splat to display.');
     const semantics = manifest.coordinates?.semantics;
     return this.importWorld({
-      name: manifest.displayName ?? 'Galatea demo room',
+      name: manifest.displayName ?? 'doodleforge demo room',
       worldId: manifest.worldId, model: manifest.model, prompt: manifest.caption,
       metricScale: semantics?.metric_scale_factor, groundOffset: semantics?.ground_plane_offset,
       splat, collider, pano,

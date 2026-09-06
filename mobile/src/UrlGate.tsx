@@ -34,7 +34,7 @@ export function UrlGate({ initialUrl, errorMessage, onSave }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.card}>
-        <Text style={styles.title}>Print the World</Text>
+        <Text style={styles.title}>doodleforge</Text>
         <Text style={styles.body}>
           On the laptop run `ipconfig getifaddr en0` and start `npm run web`. Enter the
           LAN URL below (must end with /m). Laptop and phone need the same Wi-Fi.
