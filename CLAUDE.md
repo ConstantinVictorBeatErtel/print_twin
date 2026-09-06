@@ -134,6 +134,17 @@ to keep three.js out of the Convex bundle). `convex/pipeline-modules.d.ts` types
 modules. Progress is patched onto the asset row, so the client watches it with `useQuery`
 instead of polling. STL export runs in the browser (`src/lib/stlExport.ts`).
 
+**The demo does not generate.** `convex/demoAssets.ts` holds four objects that were
+generated for real earlier — couch, table, flower vase, dinosaur — keyed by word-boundary
+keywords (`sofa`, `desk`, `flowers`, `t-rex`, …; first one named in the sentence wins). When
+`startSketch` matches one it inserts a normal asset row and walks it through the real stages
+on a fixed clock — image 0s, cutout 2.5s, mesh 5s, pulling the mesh 7.5s, ready at 10s — then
+points the row at the saved GLB, so the card, the orientation solve and the auto-placement all
+run unchanged. Anything else still generates for real, and `?live=1` turns the stand-ins off
+entirely (the demo path then needs the keys below). The curated asset IDs are per-deployment;
+a deployment without them falls back to the newest ready library object matching the same
+keywords, and failing that the card says the demo object is missing.
+
 Needs `FAL_KEY` and `TRIPO_API_KEY` in the Convex environment. The Tripo endpoint here is
 `api.tripo3d.ai/v2/openapi`, not the `openapi.tripo3d.ai/v3` one used by the older
 `assets.generateFromText`/`generateFromImage` actions.

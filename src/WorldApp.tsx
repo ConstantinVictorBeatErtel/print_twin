@@ -94,6 +94,10 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   // default: it costs two uploads and a round trip per object, and the geometric sweep it
   // assists is already the answer whenever the generated mesh resembles what was drawn.
   const vision = useMemo(() => new URLSearchParams(location.search).has("vision"), []);
+  // ?live=1 generates every sketch for real. Without it the four demo objects (couch, table,
+  // flower vase, dinosaur) come back from the library on the pipeline's timings — see
+  // convex/demoAssets.ts; everything else generates for real either way.
+  const live = useMemo(() => new URLSearchParams(location.search).has("live"), []);
 
   const worldsResult = useQuery(api.worlds.list);
   const worlds = useMemo(() => worldsResult ?? [], [worldsResult]);
@@ -218,7 +222,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
     setSubmitting(true); setError("");
     try {
       const [imageStorageId, cleanStorageId] = await Promise.all([store(request.image), store(request.cleanImage)]);
-      const assetId = await startSketch({ imageStorageId, cleanStorageId, description: request.description });
+      const assetId = await startSketch({ imageStorageId, cleanStorageId, description: request.description, live });
       const next: JobEntry = { assetId, anchor: request.anchor, startedAt: Date.now(), strokeImage: request.strokeImage };
       // Appended, not replacing: an earlier job may still be generating, and it keeps watching
       // itself (see JobWatcher) regardless of what else gets drawn next.
