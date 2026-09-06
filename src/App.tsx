@@ -64,7 +64,7 @@ export default function App() {
   if (loading || error) return <main className="capture-entry capture-loading" role={error ? 'alert' : 'status'}>
     <div className="capture-card">
       {!error && <div className="capture-spinner" aria-hidden="true" />}
-      <p className="capture-kicker">GALATEA</p>
+      <p className="capture-kicker">doodleforge</p>
       <h1>{error ? 'Unable to open the world.' : 'Step into your world.'}</h1>
       <p className="capture-copy">{error || 'Opening the demo world…'}</p>
       {error && <>

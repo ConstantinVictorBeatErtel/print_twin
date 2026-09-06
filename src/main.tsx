@@ -12,7 +12,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     {convex ? <ConvexProvider client={convex}>
       <App />
     </ConvexProvider> : <main className="capture-entry"><div className="capture-card">
-      <p className="capture-kicker">GALATEA</p><h1>Connect your workspace.</h1>
+      <p className="capture-kicker">doodleforge</p><h1>Connect your workspace.</h1>
       <p className="capture-copy">Start the Convex development backend, then reload this page.</p>
       <code>npx convex dev</code>
     </div></main>}
