@@ -31,8 +31,13 @@ export default defineSchema({
     error: v.optional(v.string()),
     // Sketch pipeline: the client watches these instead of polling a job endpoint.
     description: v.optional(v.string()),        // what the user typed under their drawing
+    promptMode: v.optional(v.union(v.literal("direct"), v.literal("context"))),
+    imagePrompt: v.optional(v.string()),        // exact final text sent to Klein
+    promptModel: v.optional(v.string()),
+    promptRequestId: v.optional(v.string()),
+    promptDurationMs: v.optional(v.number()),
     stage: v.optional(v.union(                  // drives the Image -> Cutout -> 3D card
-      v.literal("image"), v.literal("cutout"), v.literal("mesh"), v.literal("done"))),
+      v.literal("prompt"), v.literal("image"), v.literal("cutout"), v.literal("mesh"), v.literal("done"))),
     progress: v.optional(v.number()),           // Tripo task progress, 0-100
     cutoutStorageId: v.optional(v.id("_storage")), // the isolated object PNG fed to Tripo
     hasSurfaceColor: v.optional(v.boolean()),   // inspectGlb verdict, not a promise of fidelity

@@ -43,7 +43,11 @@ export const update = internalMutation({
       glbStorageId: v.optional(v.id("_storage")),
       thumbnailUrl: v.optional(v.string()),
       error: v.optional(v.string()),
-      stage: v.optional(v.union(v.literal("image"), v.literal("cutout"), v.literal("mesh"), v.literal("done"))),
+      stage: v.optional(v.union(v.literal("prompt"), v.literal("image"), v.literal("cutout"), v.literal("mesh"), v.literal("done"))),
+      imagePrompt: v.optional(v.string()),
+      promptModel: v.optional(v.string()),
+      promptRequestId: v.optional(v.string()),
+      promptDurationMs: v.optional(v.number()),
       progress: v.optional(v.number()),
       cutoutStorageId: v.optional(v.id("_storage")),
       hasSurfaceColor: v.optional(v.boolean()),
@@ -118,21 +122,26 @@ export const generateFromImage = action({
 export const startSketch = mutation({
   args: {
     sketchStorageId: v.id("_storage"),
+    backgroundStorageId: v.optional(v.id("_storage")),
+    sketchBounds: v.optional(v.object({ left: v.number(), top: v.number(), right: v.number(), bottom: v.number() })),
     description: v.string(),
   },
-  handler: async (ctx, { sketchStorageId, description }): Promise<Id<"assets">> => {
+  handler: async (ctx, { sketchStorageId, backgroundStorageId, sketchBounds, description }): Promise<Id<"assets">> => {
     const text = description.trim();
     if (!text) throw new Error("Describe what you drew before generating.");
     if (text.length > 8000) throw new Error("Keep the description under 8,000 characters.");
+    if (backgroundStorageId && (!sketchBounds || !Object.values(sketchBounds).every((n) => Number.isFinite(n) && n >= 0 && n <= 1)
+      || sketchBounds.left >= sketchBounds.right || sketchBounds.top >= sketchBounds.bottom)) throw new Error("Room context requires valid sketch bounds.");
     // Fail before creating a row: an unconfigured deployment should say so plainly
     // rather than leaving a failed object in everyone's library.
     for (const key of ["FAL_KEY", "TRIPO_API_KEY"]) {
       if (!process.env[key]?.trim()) throw new Error(`${key} is not set on this deployment. Run \`npx convex env set ${key} <key>\`.`);
     }
     const id = await ctx.db.insert("assets", {
-      prompt: text, description: text, model: "P1-20260311", status: "generating", stage: "image",
+      prompt: text, description: text, model: "P1-20260311", status: "generating",
+      promptMode: backgroundStorageId ? "context" : "direct", stage: backgroundStorageId ? "prompt" : "image",
     });
-    await ctx.scheduler.runAfter(0, internal.sketch.run, { id, sketchStorageId, description: text });
+    await ctx.scheduler.runAfter(0, internal.sketch.run, { id, sketchStorageId, backgroundStorageId, sketchBounds, description: text });
     return id;
   },
 });

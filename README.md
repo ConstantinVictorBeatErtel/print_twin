@@ -265,21 +265,31 @@ npx convex env set TRIPO_API_KEY <key>  # Tripo: textured P1 models
 npm run dev
 ```
 
-The browser uploads only the cropped sketch strokes on a transparent PNG background.
-The room snapshot stays in the browser as the drawing backdrop. `assets.startSketch`
-receives the sketch storage ID and full description, inserts the object row and returns
-its ID immediately; `sketch.run` then does the paid work on the scheduler:
+The browser uploads the cropped sketch strokes on a transparent PNG background.
+**Use room context to refine the prompt** is enabled by default. It also uploads the
+clean room snapshot for a Qwen3.8 27B prompt-writing step, with the sketch position
+and full user description. Qwen runs through fal's `openrouter/router/vision` using
+the existing `FAL_KEY`; no separate OpenRouter key is required. The background never
+goes to Klein. Turn the checkbox off to use the sketch-only baseline, which uploads
+no background and makes no prompt-writer call.
 
-1. **Image** — fal FLUX.2 Klein 9B receives one transparent sketch image and the full
-   description plus object-generation instructions. The backend sends PNG bytes as a
+`assets.startSketch` inserts the object row and returns its ID immediately;
+`sketch.run` does the paid work on the scheduler:
+
+1. **Prompt (optional)** — Qwen translates relevant room context into concrete object
+   attributes. Its output is combined with the complete original user description
+   and isolation instructions. The exact image prompt, model, request ID and elapsed
+   time are saved on the asset; expand **Image prompt** in the generation card.
+2. **Image** — fal FLUX.2 Klein 9B receives one transparent sketch image and the final
+   text prompt. The backend sends PNG bytes as a
    base64 data URI, so local Convex storage does not need to be publicly accessible.
    The model creates a clean isolated object on white for background removal.
-2. **Cutout** — fal BiRefNet removes the background; a PNG with no transparent or no
+3. **Cutout** — fal BiRefNet removes the background; a PNG with no transparent or no
    visible pixels is rejected before any 3D task is submitted.
-3. **3D + color** — Tripo P1 `image_to_model` with `texture: true`,
+4. **3D + color** — Tripo P1 `image_to_model` with `texture: true`,
    `texture_alignment: original_image`, PBR maps off. The task ID is saved *before*
    polling starts, so a reload or retry resumes it rather than paying twice.
-4. The GLB is checked for a connected base-colour texture or vertex colours — a grey
+5. The GLB is checked for a connected base-colour texture or vertex colours — a grey
    base mesh is refused — and stored in Convex.
 
 Progress is written onto the object row, so the card in the viewer updates reactively

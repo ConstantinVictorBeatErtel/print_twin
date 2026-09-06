@@ -6,6 +6,7 @@
 // finished object lands in Convex storage where every player in the room can see it.
 //
 //   transparent sketch + prompt -> fal FLUX.2 Klein 9B edit (isolated object on white)
+//   optional room + sketch -> Qwen prompt writer -> text only joins the above
 //                         -> fal BiRefNet                (transparent cutout)
 //                         -> Tripo P1 image_to_model     (textured GLB)
 //                         -> inspectGlb requireColor     (reject the gray base mesh)
@@ -22,6 +23,7 @@ import type { Id } from "./_generated/dataModel";
 import { credentials, makeApi, generationPayload, waitForTask, MODEL } from "./tripo";
 // Reused verbatim from the CLI: Klein + BiRefNet + the PNG alpha check.
 import { inspectPng, runWorkflow } from "../scripts/image-benchmark/providers.mjs";
+import { buildImagePrompt, writeSketchPrompt } from "../scripts/sketch-prompt.mjs";
 
 // providers.mjs is plain JS. convex/tsconfig.json has allowJs, so its inference (which
 // only sees the defaults, losing `env`, `imageUrls` and onProgress's argument) wins over
@@ -34,21 +36,6 @@ const runSketchWorkflow = runWorkflow as unknown as (
 // Pure GLB container inspection — no three.js, safe to bundle.
 import { inspectGlb, modelArtifact } from "../scripts/glb-assets.mjs";
 const TASK_TIMEOUT_MS = 300_000;
-
-/**
- * The input contains only drawing marks on transparency. Keep the complete user
- * description alongside the instructions for turning that outline into an object.
- */
-function buildPrompt(description: string) {
-  return [
-    "Create a polished isolated object from the sketch on a transparent background in image 1 and the user description.",
-    "The colored drawing marks identify the object or desired outline. Interpret those marks as instructions; remove all drawing ink from the result.",
-    "Preserve the requested colors, surface patterns and material appearance in the object; drawing ink color is only an annotation unless requested.",
-    "Show only the requested object, complete and centered, in a clear three-quarter product view with visible depth and padding.",
-    "Do not add a room, surrounding objects, text, UI, cast shadows or ground plane. Use a plain white background for clean extraction. Preserve requested holes, openings and geometric features.",
-    "User request: " + description,
-  ].filter(Boolean).join("\n");
-}
 
 const redact = (message: string) => {
   let out = message;
@@ -66,9 +53,11 @@ export const run = internalAction({
   args: {
     id: v.id("assets"),
     sketchStorageId: v.id("_storage"), // ink alone on transparency; no room pixels
+    backgroundStorageId: v.optional(v.id("_storage")), // prompt writer ONLY
+    sketchBounds: v.optional(v.object({ left: v.number(), top: v.number(), right: v.number(), bottom: v.number() })),
     description: v.string(),
   },
-  handler: async (ctx, { id, sketchStorageId, description }): Promise<Id<"assets">> => {
+  handler: async (ctx, { id, sketchStorageId, backgroundStorageId, sketchBounds, description }): Promise<Id<"assets">> => {
     const text = description.trim();
     const patch = (p: Record<string, unknown>) =>
       ctx.runMutation(internal.assets.update, { id, patch: p as any });
@@ -81,9 +70,25 @@ export const run = internalAction({
       // fal accepts base64 file inputs. Sending bytes also works when Convex storage
       // is local and its URLs cannot be fetched by the remote image model.
       const sketchDataUrl = `data:image/png;base64,${sketchBytes.toString("base64")}`;
+      let contextualPrompt: string | undefined;
+      if (backgroundStorageId) {
+        if (!sketchBounds) throw new Error("Room context requires the sketch position.");
+        const background = await ctx.storage.get(backgroundStorageId);
+        if (!background) throw new Error("The background is no longer in storage. Sketch again or turn off room context.");
+        const backgroundDataUrl = `data:image/png;base64,${Buffer.from(await background.arrayBuffer()).toString("base64")}`;
+        await patch({ stage: "prompt" });
+        const written = await writeSketchPrompt({ description: text, sketchDataUrl, backgroundDataUrl, bounds: sketchBounds }, {
+          env: process.env,
+          onSubmitted: async (requestId, model) => { await patch({ promptRequestId: requestId, promptModel: model }); },
+        });
+        contextualPrompt = written.prompt;
+        await patch({ promptDurationMs: written.durationMs });
+      }
+      const imagePrompt = buildImagePrompt(text, contextualPrompt);
+      await patch({ stage: "image", imagePrompt });
 
       // Klein edit + BiRefNet cutout + alpha validation, in one call.
-      const result = await runSketchWorkflow("klein-9b", buildPrompt(text), {
+      const result = await runSketchWorkflow("klein-9b", imagePrompt, {
         env: process.env,
         imageUrls: [sketchDataUrl],
         onProgress: (name) => { if (name === "backgroundRemoval") void patch({ stage: "cutout" }); },

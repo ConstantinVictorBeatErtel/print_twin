@@ -36,6 +36,7 @@ const ANCHOR_KEY = "galatea-sketch-anchor-v1";
 // Above this the stroke cutout is dropped from localStorage rather than risking the quota.
 const STROKE_BUDGET = 1_500_000;
 const STAGES = [
+  ["prompt", "Prompt"],
   ["image", "Image"],
   ["cutout", "Cutout"],
   ["mesh", "3D + color"],
@@ -199,8 +200,11 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         if (!response.ok) throw new Error(`Upload failed (HTTP ${response.status}).`);
         return (await response.json()).storageId as Id<"_storage">;
       };
-      const sketchStorageId = await store(request.strokeImage);
-      const assetId = await startSketch({ sketchStorageId, description: request.description });
+      const [sketchStorageId, backgroundStorageId] = await Promise.all([
+        store(request.strokeImage), request.backgroundImage ? store(request.backgroundImage) : undefined,
+      ]);
+      const assetId = await startSketch({ sketchStorageId, backgroundStorageId,
+        sketchBounds: backgroundStorageId ? request.anchor.bounds : undefined, description: request.description });
       const next = { assetId, anchor: request.anchor, startedAt: Date.now(), strokeImage: request.strokeImage };
       // The uploaded sketch also serves as a local visual placeholder. If it will not fit,
       // keep the job and lose the hanging sketch on reload rather than failing submission.
@@ -480,8 +484,13 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
             <p>{jobAsset?.error || (jobInHand ? "Move over a room surface, then click to place."
               : jobPlaced ? "Select your object to adjust it."
               : jobAsset?.status === "ready" ? "Choose Place when you're ready."
+              : stage === "prompt" ? "Reading your sketch and room to write the image prompt."
               : "Klein cleans up your sketch, then Tripo builds it with colour.")}</p>
-            {generating && <div className="pipeline-steps">{STAGES.map(([key, label]) =>
+            {jobAsset?.imagePrompt && <details className="image-prompt"><summary>Image prompt · {jobAsset.promptMode === "context" ? "with room context" : "sketch only"}</summary>
+              {jobAsset.promptModel && <p>{jobAsset.promptModel} · {((jobAsset.promptDurationMs ?? 0) / 1000).toFixed(1)}s</p>}
+              <pre>{jobAsset.imagePrompt}</pre>
+            </details>}
+            {generating && <div className="pipeline-steps">{STAGES.filter(([key]) => key !== "prompt" || jobAsset?.promptMode === "context").map(([key, label]) =>
               <span key={key} className={key === stage ? "current" : ""}>{label}</span>)}</div>}
             <div className="row wrap">
               {jobAsset?.status === "ready" && !jobInHand && !jobPlaced && jobAsset.glbUrl &&

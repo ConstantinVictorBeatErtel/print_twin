@@ -1,4 +1,4 @@
-// Types for the two plain-JS pipeline modules the sketch action reuses from the CLI.
+// Types for the plain-JS pipeline modules the sketch action reuses from the CLI.
 // They are shared with scripts/ and tests/, so they stay JS; this states the shape of
 // the parts convex/sketch.ts calls rather than duplicating the implementations.
 
@@ -32,6 +32,19 @@ declare module "*/image-benchmark/providers.mjs" {
     stages?: { name: string; ms: number }[];
     totalMs?: number;
   }>;
+}
+
+declare module "*/sketch-prompt.mjs" {
+  export const DEFAULT_PROMPT_MODEL: string;
+  export function buildImagePrompt(description: string, contextualPrompt?: string): string;
+  export function writeSketchPrompt(input: {
+    description: string; sketchDataUrl: string; backgroundDataUrl: string;
+    bounds: { left: number; top: number; right: number; bottom: number };
+  }, options?: {
+    env?: Record<string, string | undefined>; fetchImpl?: typeof fetch;
+    timeoutMs?: number; pollMs?: number;
+    onSubmitted?: (requestId: string, model: string) => Promise<void>;
+  }): Promise<{ prompt: string; model: string; requestId: string; durationMs: number }>;
 }
 
 declare module "*/glb-assets.mjs" {

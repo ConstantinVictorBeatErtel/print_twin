@@ -242,6 +242,11 @@ button.primary:hover:not(:disabled) { background: #e4ffcf; border-color: #e4ffcf
 .drawing-tools > span { flex: 1; color: #d2fbb6; padding-left: 6px; }
 .drawing-tools button { padding: 5px 8px; border-color: transparent; }
 .composer-row { display: flex; gap: 10px; }
+.context-toggle { display: flex; align-items: center; gap: 8px; margin: 10px 6px 0; font-size: 12px; }
+.drawing-composer .context-toggle + p { margin-bottom: 12px; }
+.image-prompt { margin: 8px 0; }
+.image-prompt summary { cursor: pointer; }
+.image-prompt pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow-y: auto; font: inherit; user-select: text; }
 .composer-row input { user-select: text; flex: 1; min-width: 0; padding: 13px 12px; background: #ffffff08; border: 1px solid #ffffff17; border-radius: 9px; color: #fff; font-size: 12px; }
 .composer-row button { white-space: nowrap; font-size: 12px; }
 .drawing-composer p { margin: 10px 6px 2px; font-size: 10px; }

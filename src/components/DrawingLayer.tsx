@@ -6,14 +6,14 @@ import { anchorDrawing, drawingBounds, type DrawingAnchor, type DrawingBounds, t
 export type DrawingCapture = { image: HTMLCanvasElement; anchor: (bounds: DrawingBounds) => DrawingAnchor };
 // `strokeImage` is the ink alone on transparency, cropped to `anchor.bounds`, so it can be
 // hung back in the room on the quad those same bounds unproject to (see SketchGhost).
-export type DrawingRequest = { strokeImage: string; description: string; anchor: DrawingAnchor };
+export type DrawingRequest = { strokeImage: string; backgroundImage?: string; description: string; anchor: DrawingAnchor };
 export function DrawingBridge({ captureRef }: { captureRef: React.MutableRefObject<(() => DrawingCapture) | null> }) {
   const { gl, camera, scene } = useThree();
   useEffect(() => {
     captureRef.current = () => {
       gl.render(scene, camera);
       const image = document.createElement("canvas");
-      // Local drawing backdrop only; generation receives the transparent ink cutout.
+      // Backdrop/context for the prompt writer; the image model gets only the ink.
       const ratio = Math.min(1, 1280 / Math.max(gl.domElement.width, gl.domElement.height));
       image.width = Math.round(gl.domElement.width * ratio); image.height = Math.round(gl.domElement.height * ratio);
       image.getContext("2d")!.drawImage(gl.domElement, 0, 0, image.width, image.height);
@@ -33,6 +33,7 @@ export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMess
   const current = useRef<{ stroke: Stroke; pointerId: number } | null>(null);
   const [revision, setRevision] = useState(0);
   const [description, setDescription] = useState("");
+  const [useRoomContext, setUseRoomContext] = useState(true);
   const [error, setError] = useState("");
   const [anchor, setAnchor] = useState<DrawingAnchor | null>(null);
   const bounds = drawingBounds(strokes.current);
@@ -111,13 +112,18 @@ export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMess
     <form className="drawing-composer" onSubmit={(e) => {
       e.preventDefault();
       if (blocked || !bounds || !anchor || !description.trim() || current.current) return;
-      void onGenerate({ strokeImage: strokeCutout(anchor.bounds), description: description.trim(), anchor });
+      void onGenerate({ strokeImage: strokeCutout(anchor.bounds),
+        backgroundImage: useRoomContext ? capture.image.toDataURL("image/png") : undefined,
+        description: description.trim(), anchor });
     }}>
       <div className="drawing-tools"><span>{anchor ? "Size estimated · You'll choose where to place it" : "Draw the object's outline"}</span>
         <button type="button" disabled={!strokes.current.length} onClick={() => { strokes.current.pop(); refreshAnchor(); }}>Undo stroke</button>
         <button type="button" disabled={!strokes.current.length} onClick={() => { strokes.current = []; refreshAnchor(); }}>Clear</button>
         <button type="button" onClick={onCancel}>Cancel <kbd>Esc</kbd></button>
       </div>
+      <label className="context-toggle"><input type="checkbox" checked={useRoomContext} disabled={blocked}
+        onChange={(e) => setUseRoomContext(e.target.checked)} />Use room context to refine the prompt</label>
+      <p className="hint">{useRoomContext ? "The prompt writer sees your sketch and room. The image generator receives only the sketch and the written prompt." : "Sketch-only baseline: your description goes straight to the image generator with the transparent sketch."}</p>
       <div className="composer-row"><input aria-label="Describe your object" placeholder="What are you imagining? A faceted ceramic pot…" value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} required />
         <button className="primary" disabled={blocked || !anchor || !description.trim()} type="submit">{blocked ? "Sending drawing…" : "Create in room"} <span>↗</span></button></div>
       <p role="status" className={error || errorMessage ? "error-text" : "hint"}>{errorMessage || error || "Image → color GLB → click to place · Keep exploring while it builds."}</p>
