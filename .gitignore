@@ -37,3 +37,4 @@ public/room/assets/*
 !public/room/assets/collider.glb
 public/models/*
 !public/models/plantpot.glb
+.vercel/
