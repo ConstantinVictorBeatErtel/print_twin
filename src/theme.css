@@ -1,0 +1,42 @@
+/* Shared UI palette for the capture flow and both room viewers. */
+:root {
+  color-scheme: dark;
+  --canvas: #0b0d10;
+  --surface: #121519;
+  --surface-panel: rgba(18, 21, 25, 0.95);
+  --surface-overlay: rgba(18, 21, 25, 0.92);
+  --bg: rgba(11, 13, 16, 0.85);
+  --surface-input: #15191e;
+  --surface-recessed: #070809;
+  --fg: #f4f1ea;
+  --muted: #9aa3ad;
+  --secondary: #c3c8ce;
+  --accent: #d4784a;
+  --accent-hover: #e59165;
+  --on-accent: #160d08;
+  --accent-soft: rgba(212, 120, 74, 0.08);
+  --accent-selected: rgba(212, 120, 74, 0.16);
+  --accent-border: rgba(212, 120, 74, 0.65);
+  --accent-glow: rgba(212, 120, 74, 0.25);
+  --border: rgba(244, 241, 234, 0.14);
+  --border-strong: rgba(244, 241, 234, 0.3);
+  --control: rgba(244, 241, 234, 0.04);
+  --control-hover: rgba(244, 241, 234, 0.09);
+  --error: #ff9b86;
+  --error-surface: #38221f;
+  --success: #98f5ba;
+  --success-glow: rgba(152, 245, 186, 0.25);
+  /* Pink identifies sketch ink; it is separate from the copper UI accent. */
+  --ink: #ff5488;
+  --ink-border: rgba(255, 84, 136, 0.5);
+  --ink-glow: rgba(255, 84, 136, 0.17);
+}
+
+:where(button, input, textarea, select, a, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+input, textarea, select { accent-color: var(--accent); }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+::selection { background: var(--accent); color: var(--on-accent); }

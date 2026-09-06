@@ -1,3 +1,4 @@
+import { theme } from './theme';
 import { useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -50,10 +51,10 @@ export function ViewerScreen({ url, onLoadError }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#0b0d10',
+    backgroundColor: theme.canvas,
   },
   webview: {
     flex: 1,
-    backgroundColor: '#0b0d10',
+    backgroundColor: theme.canvas,
   },
 });

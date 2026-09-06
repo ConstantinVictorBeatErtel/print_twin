@@ -1,3 +1,4 @@
+import { theme } from './src/theme';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -52,7 +53,7 @@ export default function App() {
   if (!ready) {
     return (
       <View style={styles.boot}>
-        <ActivityIndicator color="#d4784a" />
+        <ActivityIndicator color={theme.accent} />
         <StatusBar style="light" />
       </View>
     );
@@ -75,10 +76,10 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0b0d10' },
+  root: { flex: 1, backgroundColor: theme.canvas },
   boot: {
     flex: 1,
-    backgroundColor: '#0b0d10',
+    backgroundColor: theme.canvas,
     alignItems: 'center',
     justifyContent: 'center',
   },

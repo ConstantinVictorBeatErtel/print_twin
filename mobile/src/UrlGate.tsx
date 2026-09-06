@@ -1,3 +1,4 @@
+import { theme } from './theme';
 import { useState } from 'react';
 import {
   View,
@@ -48,7 +49,7 @@ export function UrlGate({ initialUrl, errorMessage, onSave }: Props) {
           autoCorrect={false}
           keyboardType="url"
           placeholder="http://192.168.1.42:5173/m"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor={theme.muted}
           value={value}
           onChangeText={setValue}
         />
@@ -91,51 +92,51 @@ export function UrlGate({ initialUrl, errorMessage, onSave }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#0b0d10',
+    backgroundColor: theme.canvas,
     justifyContent: 'center',
     padding: 24,
   },
   card: {
-    backgroundColor: 'rgba(8,10,12,0.92)',
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 20,
     gap: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: theme.border,
   },
   title: {
-    color: '#f4f1ea',
+    color: theme.foreground,
     fontSize: 22,
     fontWeight: '700',
   },
   body: {
-    color: '#9aa3ad',
+    color: theme.muted,
     fontSize: 15,
     lineHeight: 22,
   },
   error: {
-    color: '#f07178',
+    color: theme.error,
     fontSize: 14,
     lineHeight: 20,
   },
   input: {
-    backgroundColor: '#15191e',
-    color: '#f4f1ea',
+    backgroundColor: theme.input,
+    color: theme.foreground,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: theme.border,
   },
   button: {
-    backgroundColor: '#d4784a',
+    backgroundColor: theme.accent,
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',
   },
   buttonText: {
-    color: '#0b0d10',
+    color: theme.onAccent,
     fontWeight: '700',
     fontSize: 16,
   },

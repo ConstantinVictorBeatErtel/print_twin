@@ -38,7 +38,7 @@ export function DebugPanel({ settings, onChange }: {
     onChange({ ...settings, [key]: value });
 
   return (
-    <div style={{ marginTop: 12, padding: 8, background: "#181818", border: "1px solid #333", borderRadius: 4 }}>
+    <div style={{ marginTop: 12, padding: 8, background: "var(--surface-input)", border: "1px solid var(--border)", borderRadius: 4 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <b>Debug</b>
         <button style={{ fontSize: 11 }} onClick={() => onChange(DEBUG_DEFAULTS)}>reset</button>
