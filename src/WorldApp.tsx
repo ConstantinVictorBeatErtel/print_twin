@@ -28,6 +28,7 @@ import { resolveSketchPose, type Facing, type PoseTools } from "./lib/sketchPose
 import { pickSurface } from "./lib/surfacePick";
 import { usePlacementHistory, type PlacementInput } from "./lib/placementHistory";
 import { ConvexProjectClient } from "./lib/ConvexProjectClient";
+import { hostedModelUrl, hostedRoom } from "./lib/hostedAssets";
 import { getSessionId, randomColor } from "./lib/session";
 import { glbToStl, downloadBlob, safeFilename, PRINT_HEIGHT_MM } from "./lib/stlExport";
 
@@ -94,15 +95,21 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   // default: it costs two uploads and a round trip per object, and the geometric sweep it
   // assists is already the answer whenever the generated mesh resembles what was drawn.
   const vision = useMemo(() => new URLSearchParams(location.search).has("vision"), []);
+  // ?live=1 generates every sketch for real. Without it the four demo objects (couch, table,
+  // flower vase, dinosaur) come back from the library on the pipeline's timings — see
+  // convex/demoAssets.ts; everything else generates for real either way.
+  const live = useMemo(() => new URLSearchParams(location.search).has("live"), []);
 
   const worldsResult = useQuery(api.worlds.list);
-  const worlds = useMemo(() => worldsResult ?? [], [worldsResult]);
+  const worlds = useMemo(() => worldsResult?.map(hostedRoom) ?? [], [worldsResult]);
   const [activeWorld, setActiveWorld] = useState<string | null>(initialWorldId ?? null);
   const world = activeWorld ? worlds.find((w) => w._id === activeWorld) : worlds.find((w) => w.status === "ready");
   const room = explicitRoom ?? activeWorld ?? world?._id ?? "lobby";
 
-  const assets = useQuery(api.assets.list) ?? [];
-  const placements = (useQuery(api.assets.placementsInRoom, { room }) ?? []) as PlacementDoc[];
+  const assetsResult = useQuery(api.assets.list);
+  const assets = useMemo(() => assetsResult?.map(asset => ({ ...asset, glbUrl: hostedModelUrl(asset.glbUrl), cutoutUrl: hostedModelUrl(asset.cutoutUrl) })) ?? [], [assetsResult]);
+  const placementsResult = useQuery(api.assets.placementsInRoom, { room });
+  const placements = useMemo(() => placementsResult?.map(placement => ({ ...placement, glbUrl: hostedModelUrl(placement.glbUrl) })) ?? [], [placementsResult]);
   const place = useMutation(api.assets.place);
   const removePlacement = useMutation(api.assets.removePlacement);
   const updatePlacement = useMutation(api.assets.updatePlacement);
@@ -139,6 +146,9 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const [worldPrompt, setWorldPrompt] = useState("a cozy candle-lit library with tall shelves");
   const [cfg, setCfg] = useState<DebugSettings>(DEBUG_DEFAULTS);
   const [submitting, setSubmitting] = useState(false);
+  const [generatingWorld, setGeneratingWorld] = useState(false);
+  const submissionBusy = useRef(false);
+  const worldBusy = useRef(false);
   const [exporting, setExporting] = useState(false);
   const zipInput = useRef<HTMLInputElement>(null);
 
@@ -215,11 +225,14 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   }, [uploadUrl]);
 
   async function submitDrawing(request: DrawingRequest) {
+    if (submissionBusy.current) return;
+    submissionBusy.current = true;
     setSubmitting(true); setError("");
     try {
       const [imageStorageId, cleanStorageId] = await Promise.all([store(request.image), store(request.cleanImage)]);
-      const assetId = await startSketch({ imageStorageId, cleanStorageId, description: request.description });
+      const assetId = await startSketch({ imageStorageId, cleanStorageId, description: request.description, live });
       const next: JobEntry = { assetId, anchor: request.anchor, startedAt: Date.now(), strokeImage: request.strokeImage };
+      setNow(next.startedAt);
       // Appended, not replacing: an earlier job may still be generating, and it keeps watching
       // itself (see JobWatcher) regardless of what else gets drawn next.
       setJobs((prev) => [...prev, next]);
@@ -227,6 +240,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
     } catch (e) {
       setError(`Could not start generation: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+      submissionBusy.current = false;
       setSubmitting(false);
     }
   }
@@ -263,7 +277,8 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const leaveDrawing = useCallback(() => { setDrawing(null); resumeWalking(); }, [resumeWalking]);
 
   const selectWorld = (id: string) => {
-    setActiveWorld(id); setJoined(false); setRoomReady(false); setError("");
+    setActiveWorld(id); setJoined(false); setError("");
+    if (world?._id !== id) setRoomReady(false);
     cancel(); setSelected(null); history.clear();
     const url = new URL(location.href);
     url.searchParams.set("world", id);
@@ -280,6 +295,20 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       setZipStatus(`loaded ${file.name}`);
     } catch (e) {
       setZipStatus(`failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function generateWorld() {
+    if (worldBusy.current || !worldPrompt.trim()) return;
+    worldBusy.current = true;
+    setGeneratingWorld(true); setError("");
+    try {
+      await genWorld({ prompt: worldPrompt, model: "marble-1.1" });
+    } catch (e) {
+      setError(`Could not create the world: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      worldBusy.current = false;
+      setGeneratingWorld(false);
     }
   }
 
@@ -378,7 +407,13 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
           <button disabled={!history.canUndo || !!armed} onClick={() => void history.undo()}>Undo</button>
           <button disabled={!history.canRedo || !!armed} onClick={() => void history.redo()}>Redo</button>
           <button className="danger" disabled={!placements.length}
-            onClick={() => { if (confirm(`Remove all ${placements.length} objects from this room? This cannot be undone.`)) { void clearRoom({ room }); history.clear(); setSelected(null); } }}>Clear all</button>
+            onClick={async () => {
+              if (!confirm(`Remove all ${placements.length} objects from this room? This cannot be undone.`)) return;
+              try {
+                await clearRoom({ room });
+                history.clear(); setSelected(null); setJobs([]); setFacingByAsset({});
+              } catch (e) { setError(`Could not clear the room: ${e instanceof Error ? e.message : String(e)}`); }
+            }}>Clear all</button>
         </div>
         {!placements.length && <p className="hint">Choose Place above, then click a table or the floor.</p>}
         {placements.map((p, i) => <button className={`object-row ${p._id === selected ? "selected" : ""}`} key={p._id} onClick={() => { cancel(); setSelected(p._id); }}>
@@ -407,7 +442,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         <button onClick={() => zipInput.current?.click()}>Upload world .zip</button>
         {zipStatus && <p className="hint">{zipStatus}</p>}
         <textarea value={worldPrompt} onChange={(e) => setWorldPrompt(e.target.value)} rows={2} aria-label="World prompt" />
-        <button onClick={() => void genWorld({ prompt: worldPrompt, model: "marble-1.1" })}>Generate a world (World Labs)</button>
+        <button disabled={generatingWorld || !worldPrompt.trim()} onClick={() => void generateWorld()}>{generatingWorld ? "Building your space…" : "Generate a world"}</button>
         {worlds.map((w) => <button className="object-row" key={w._id} disabled={w.status !== "ready"} onClick={() => selectWorld(w._id)}>
           <span>{w.name}{w.splatFileName ? ` · ${w.splatFileName.replace(/^splat-|\.spz$/g, "")}` : ""}</span><span>{w.status}</span>
         </button>)}
@@ -421,7 +456,8 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         // its `paused` also covers placement, where a click must place rather than re-lock.
         if (e.button === 0 && paused && !armed && !drawing && e.target instanceof HTMLCanvasElement) resumeWalking();
       }}>
-      {jobs.map((job) => <JobWatcher key={job.assetId} job={job} asset={assets.find((a) => a._id === job.assetId)}
+      {placementsResult !== undefined && jobs.map((job) => <JobWatcher key={job.assetId} job={job} asset={assets.find((a) => a._id === job.assetId)}
+        alreadyPlaced={placements.some((p) => p.assetId === job.assetId)}
         room={room} solveRef={solveRef} arm={arm} place={place} history={history}
           store={store} orient={orient} debug={debug} vision={vision} onPlaced={onJobPlaced} onError={setError} />)}
       <Canvas frameloop={drawing ? "never" : "always"} dpr={1} gl={{ antialias: false }} camera={{ position: [0, 1.6, 0], fov: 65, near: 0.02, far: 500 }}>
@@ -505,7 +541,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
             const jobPlaced = Boolean(jobAsset && placements.some((p) => p.assetId === jobAsset._id));
             const jobInHand = Boolean(jobAsset && armed?.assetId === jobAsset._id);
             const facing = facingByAsset[job.assetId] ?? null;
-            const elapsed = (now - job.startedAt) / 1000;
+            const elapsed = Math.max(0, (now - job.startedAt) / 1000);
             return <div className="generation-card" key={job.assetId} aria-live="polite">
               {jobAsset?.cutoutUrl && <img src={jobAsset.cutoutUrl} alt="Generated object" />}
               <div className="generation-content">
@@ -560,9 +596,10 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
  * against the user's ink. A symmetric object has no answer to recover, so it keeps the yaw
  * orientOnSurface already gave it rather than snapping to a coin-flip.
  */
-function JobWatcher({ job, asset, room, solveRef, arm, place, history, store, orient, debug, vision, onPlaced, onError }: {
+function JobWatcher({ job, asset, alreadyPlaced, room, solveRef, arm, place, history, store, orient, debug, vision, onPlaced, onError }: {
   job: JobEntry;
   asset: AssetDoc | undefined;
+  alreadyPlaced: boolean;
   room: string;
   solveRef: React.MutableRefObject<SketchSolverApi | null>;
   arm: (assetId: Id<"assets">, url: string, movingId?: Id<"placements">, suggestedSize?: number) => void;
@@ -580,7 +617,7 @@ function JobWatcher({ job, asset, room, solveRef, arm, place, history, store, or
   // that never reached `place` stops the discarded first run from swallowing the object.
   const placedRef = useRef(false);
   useEffect(() => {
-    if (!asset || asset.status !== "ready" || !asset.glbUrl || placedRef.current) return;
+    if (!asset || asset.status !== "ready" || !asset.glbUrl || placedRef.current || alreadyPlaced) return;
     placedRef.current = true;
     let alive = true, committed = false;
     void (async () => {
@@ -616,7 +653,7 @@ function JobWatcher({ job, asset, room, solveRef, arm, place, history, store, or
       }
     })();
     return () => { alive = false; if (!committed) placedRef.current = false; };
-  }, [job, asset, room, solveRef, arm, place, history, store, orient, debug, vision, onPlaced, onError]);
+  }, [job, asset, alreadyPlaced, room, solveRef, arm, place, history, store, orient, debug, vision, onPlaced, onError]);
   return null;
 }
 

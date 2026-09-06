@@ -69,7 +69,7 @@ export default function App() {
       <p className="capture-copy">{error || 'Opening the demo world…'}</p>
       {error && <>
         <button className="capture-create" onClick={() => void openDemo(legacyJob ?? DEMO_JOB)}>Retry</button>
-        <button className="entry-secondary" onClick={() => { setError(''); setLegacyJob(null); setViewer(true); }}>Open existing app / import world ZIP</button>
+        <button className="entry-secondary" onClick={() => { setError(''); setLegacyJob(null); setViewer(true); }}>Explore demo room</button>
         <button className="entry-secondary" onClick={newWorld}>Back</button>
       </>}
     </div>
@@ -78,6 +78,6 @@ export default function App() {
   if (worldId || viewer) return <WorldApp key={worldId ?? 'viewer'} initialWorldId={worldId ?? undefined} onNewWorld={newWorld} />;
   return <>
     <CaptureEntry onCreate={() => void openDemo()} />
-    <button className="open-existing-app" onClick={() => setViewer(true)}>Open existing app / import world ZIP</button>
+    <button className="open-existing-app" onClick={() => setViewer(true)}>Explore demo room</button>
   </>;
 }

@@ -1,0 +1,82 @@
+[
+  {
+    "name": "dinosaur",
+    "sourceAssetId": "jd79wec51qf5tgknyn1fk4581x8dxr99",
+    "files": [
+      {
+        "field": "cutoutUrl",
+        "sourceUrl": "https://vivid-sparrow-412.convex.cloud/api/storage/55cc2aa8-d601-4373-8b53-522ee48fde83",
+        "path": "/models/prebaked/dinosaur.png",
+        "bytes": 742919,
+        "sha256": "f1c204084a744110afb44cf9adb2321451871c83cbe8ea63f962889f2f61e441"
+      },
+      {
+        "field": "glbUrl",
+        "sourceUrl": "https://vivid-sparrow-412.convex.cloud/api/storage/fbb328f3-af7f-48d6-936a-014827d0aa25",
+        "path": "/models/prebaked/dinosaur.glb",
+        "bytes": 583248,
+        "sha256": "4e3e5c045bccee3861bd71807ed968e746ce6b2e8596671a296e4830e2680e08"
+      }
+    ]
+  },
+  {
+    "name": "flower-vase",
+    "sourceAssetId": "jd721tnvg7a391njp5fjhf1fjh8dwk2y",
+    "files": [
+      {
+        "field": "glbUrl",
+        "sourceUrl": "https://vivid-sparrow-412.convex.cloud/api/storage/9ede2c4c-a4b5-454f-b963-dcac2d71751c",
+        "path": "/models/prebaked/flower-vase.glb",
+        "bytes": 658480,
+        "sha256": "ae88db200b6c4d5eef90832b167f7887d07d2c70ef3c3cf5098f18be270cc93a"
+      },
+      {
+        "field": "cutoutUrl",
+        "sourceUrl": "https://vivid-sparrow-412.convex.cloud/api/storage/74451176-3519-4a20-8049-60e762dac6dc",
+        "path": "/models/prebaked/flower-vase.png",
+        "bytes": 602538,
+        "sha256": "8ec1e60e9611d19a12780364132f64488d0a019f05f0502d202624ede8ceacd6"
+      }
+    ]
+  },
+  {
+    "name": "couch",
+    "sourceAssetId": "jd787zynvkjrtygd7mp247cdrd8dwczf",
+    "files": [
+      {
+        "field": "glbUrl",
+        "sourceUrl": "https://vivid-sparrow-412.convex.cloud/api/storage/953158e4-8e58-4965-b2fa-c734bbe997df",
+        "path": "/models/prebaked/couch.glb",
+        "bytes": 304940,
+        "sha256": "42c7249aaf19f5636b8c7eaeee8db9118ef345e749ed99928dfcdefc73bb7dd0"
+      },
+      {
+        "field": "cutoutUrl",
+        "sourceUrl": "https://vivid-sparrow-412.convex.cloud/api/storage/a1663125-cae5-4d5f-ad08-83e8ecef227f",
+        "path": "/models/prebaked/couch.png",
+        "bytes": 829263,
+        "sha256": "f4481b25add93ae3145f60c97d8a087dba1e9dadb757aee8beabc855be08d4c4"
+      }
+    ]
+  },
+  {
+    "name": "table",
+    "sourceAssetId": "jd7788ky4qnrxaec0d6qwmrpqh8dwa9v",
+    "files": [
+      {
+        "field": "glbUrl",
+        "sourceUrl": "https://vivid-sparrow-412.convex.cloud/api/storage/3a0bcf58-6026-43e4-b0c0-e062c0b3cc05",
+        "path": "/models/prebaked/table.glb",
+        "bytes": 465852,
+        "sha256": "ddedcfbbcca28e770d16e60621fa547e2afbc6c110f816ca102aeddcc0333d53"
+      },
+      {
+        "field": "cutoutUrl",
+        "sourceUrl": "https://vivid-sparrow-412.convex.cloud/api/storage/dcd745e0-b8ce-4beb-9d08-cfc5d4918962",
+        "path": "/models/prebaked/table.png",
+        "bytes": 308242,
+        "sha256": "8660c75df8771fb0ce25f01889120cdafacd39bcac5c817b7c4acef4f34fa7e8"
+      }
+    ]
+  }
+]

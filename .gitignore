@@ -38,3 +38,4 @@ public/room/assets/*
 public/models/*
 !public/models/plantpot.glb
 .vercel/
+!public/models/prebaked/

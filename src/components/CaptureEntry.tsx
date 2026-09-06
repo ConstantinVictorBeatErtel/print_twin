@@ -72,7 +72,7 @@ export function CaptureEntry({ onCreate }: { onCreate: () => void }) {
       </button>}
       {!file && <div className="capture-actions"><button type="button" onClick={() => photoRef.current?.click()}>Take photo</button><button type="button" onClick={() => videoRef.current?.click()}>Record video</button><button type="button" onClick={() => zipRef.current?.click()}>Upload ZIP</button></div>}
       {error && <p className="capture-error" role="alert">{error}</p>}
-      <button type="button" className="capture-create" disabled={!file} onClick={onCreate}>Create my world</button>
+      <button type="button" className="capture-create" onClick={onCreate}>{file ? "Create my world" : "Explore demo room"}</button>
       <p className="capture-footnote">Demo preview · Every capture opens our existing world.</p>
     </div>
   </main>;
