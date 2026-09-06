@@ -28,7 +28,7 @@ import { resolveSketchPose, type Facing, type PoseTools } from "./lib/sketchPose
 import { pickSurface } from "./lib/surfacePick";
 import { usePlacementHistory, type PlacementInput } from "./lib/placementHistory";
 import { ConvexProjectClient } from "./lib/ConvexProjectClient";
-import { hostedModelUrl, hostedRoom } from "./lib/hostedAssets";
+import { ExistingWorlds } from "./components/ExistingWorlds";
 import { getSessionId, randomColor } from "./lib/session";
 import { glbToStl, downloadBlob, safeFilename, PRINT_HEIGHT_MM } from "./lib/stlExport";
 
@@ -95,21 +95,15 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   // default: it costs two uploads and a round trip per object, and the geometric sweep it
   // assists is already the answer whenever the generated mesh resembles what was drawn.
   const vision = useMemo(() => new URLSearchParams(location.search).has("vision"), []);
-  // ?live=1 generates every sketch for real. Without it the four demo objects (couch, table,
-  // flower vase, dinosaur) come back from the library on the pipeline's timings — see
-  // convex/demoAssets.ts; everything else generates for real either way.
-  const live = useMemo(() => new URLSearchParams(location.search).has("live"), []);
 
-  const worldsResult = useQuery(api.worlds.list);
-  const worlds = useMemo(() => worldsResult?.map(hostedRoom) ?? [], [worldsResult]);
+  const worlds = useQuery(api.worlds.list) ?? [];
   const [activeWorld, setActiveWorld] = useState<string | null>(initialWorldId ?? null);
   const world = activeWorld ? worlds.find((w) => w._id === activeWorld) : worlds.find((w) => w.status === "ready");
   const room = explicitRoom ?? activeWorld ?? world?._id ?? "lobby";
 
-  const assetsResult = useQuery(api.assets.list);
-  const assets = useMemo(() => assetsResult?.map(asset => ({ ...asset, glbUrl: hostedModelUrl(asset.glbUrl), cutoutUrl: hostedModelUrl(asset.cutoutUrl) })) ?? [], [assetsResult]);
+  const assets = useQuery(api.assets.list) ?? [];
   const placementsResult = useQuery(api.assets.placementsInRoom, { room });
-  const placements = useMemo(() => placementsResult?.map(placement => ({ ...placement, glbUrl: hostedModelUrl(placement.glbUrl) })) ?? [], [placementsResult]);
+  const placements = useMemo(() => placementsResult ?? [], [placementsResult]);
   const place = useMutation(api.assets.place);
   const removePlacement = useMutation(api.assets.removePlacement);
   const updatePlacement = useMutation(api.assets.updatePlacement);
@@ -230,7 +224,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
     setSubmitting(true); setError("");
     try {
       const [imageStorageId, cleanStorageId] = await Promise.all([store(request.image), store(request.cleanImage)]);
-      const assetId = await startSketch({ imageStorageId, cleanStorageId, description: request.description, live });
+      const assetId = await startSketch({ imageStorageId, cleanStorageId, description: request.description });
       const next: JobEntry = { assetId, anchor: request.anchor, startedAt: Date.now(), strokeImage: request.strokeImage };
       setNow(next.startedAt);
       // Appended, not replacing: an earlier job may still be generating, and it keeps watching
@@ -329,7 +323,12 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
     setSelected(null);
   };
 
-  const roomStatus = error ? error : roomReady ? "Ready" : world?.splatUrl ? "Loading room…" : "No room loaded";
+  const roomStatus = error ? error
+    : roomReady ? "Ready"
+    : world?.splatUrl ? "Loading room…"
+    : world?.status === "generating" ? "Building your world (this can take a few minutes)…"
+    : world?.status === "failed" ? `World generation failed: ${world.error ?? "unknown error"}`
+    : "No room loaded";
   // Any number of sketches may already be generating in the background — that never blocks
   // drawing the next one, or leaving to place something already in the library.
   const canDraw = roomReady && !submitting;
@@ -363,6 +362,8 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         <button aria-expanded={libraryOpen} aria-controls="object-library" onClick={() => setLibraryOpen((v) => !v)}>Objects <span className="count">{placements.length}</span></button>
       </nav>
     </header>
+
+    {!drawing && <ExistingWorlds worlds={worlds} activeId={world?._id} onSelect={selectWorld} corner="bottom-right" />}
 
     <aside id="object-library" className={`editor-panel ${libraryOpen ? "open" : ""}`} inert={!libraryOpen || !!drawing}>
       <div className="section-heading"><h2>Objects &amp; placement</h2><button aria-label="Close objects" onClick={() => setLibraryOpen(false)}>×</button></div>

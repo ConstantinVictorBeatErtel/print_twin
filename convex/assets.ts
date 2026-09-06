@@ -3,7 +3,6 @@ import { v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { findDemoSource, matchDemoObject, startDemoSketch } from "./demoAssets";
 
 const BASE = "https://openapi.tripo3d.ai/v3";
 const headers = () => ({
@@ -121,20 +120,11 @@ export const startSketch = mutation({
     imageStorageId: v.id("_storage"),
     cleanStorageId: v.optional(v.id("_storage")),
     description: v.string(),
-    live: v.optional(v.boolean()),   // ?live=1: always generate, never use a demo stand-in
   },
-  handler: async (ctx, { imageStorageId, cleanStorageId, description, live }): Promise<Id<"assets">> => {
+  handler: async (ctx, { imageStorageId, cleanStorageId, description }): Promise<Id<"assets">> => {
     const text = description.trim();
     if (!text) throw new Error("Describe what you drew before generating.");
     if (text.length > 8000) throw new Error("Keep the description under 8,000 characters.");
-    // The four demo objects are already generated: replay the pipeline's stages on a fixed
-    // clock and finish with the saved mesh. See convex/demoAssets.ts. Anything else — and
-    // anything at all under ?live=1 — falls through to the real fal + Tripo run below.
-    if (!live) {
-      const demo = matchDemoObject(text);
-      const source = demo ? await findDemoSource(ctx, demo) : null;
-      if (source) return await startDemoSketch(ctx, text, source);
-    }
     // Fail before creating a row: an unconfigured deployment should say so plainly
     // rather than leaving a failed object in everyone's library.
     for (const key of ["FAL_KEY", "TRIPO_API_KEY"]) {

@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import type { ConvexReactClient } from 'convex/react';
 import { getFunctionName } from 'convex/server';
 import { zipSync, strToU8 } from 'fflate';
-import { BUNDLED_ROOM_BASE, ConvexProjectClient, DEMO_SPLAT_FILE, DEMO_WORLD_ID } from './ConvexProjectClient';
+import { ConvexProjectClient } from './ConvexProjectClient';
 import { worldTransform } from './worldTransform';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -19,33 +19,38 @@ function backend(existing = false) {
   return { client: new ConvexProjectClient({ query, mutation } as unknown as ConvexReactClient), imports, query, mutation };
 }
 
-test('an existing hosted demo needs no local files or upload', async () => {
+test('an already-imported saved room needs no local files or upload', async () => {
   const { client, mutation } = backend(true);
-  const fetcher = vi.fn();
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.endsWith('manifest.json')) return Response.json({
+      worldId: 'saved-world', displayName: 'Saved room', preferredSplat: 'splat-500k',
+      assets: { 'splat-500k': { path: 'assets/splat-500k.spz' } },
+    });
+    throw new Error(`unexpected fetch: ${url}`);
+  });
   vi.stubGlobal('fetch', fetcher);
-  expect(await client.ensureDemoWorld()).toBe('convex-world');
-  expect(fetcher).not.toHaveBeenCalled();
+  expect(await client.importLocalWorld('saved-job')).toBe('convex-world');
   expect(mutation).not.toHaveBeenCalled();
 });
 
-test('concurrent demo entries import the bundled room once, with its original metadata', async () => {
+test('concurrent entries for the same saved job import it once, with its original metadata', async () => {
   const { client, imports, query } = backend();
   const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
     if (options?.method === 'POST') return Response.json({ storageId: 'storage-id' });
     if (url.endsWith('manifest.json')) return Response.json({
-      worldId: DEMO_WORLD_ID, displayName: 'Demo room', preferredSplat: 'splat-full_res',
-      assets: { 'splat-full_res': { path: `assets/${DEMO_SPLAT_FILE}` }, collider: { path: 'assets/collider.glb' } },
+      worldId: 'saved-world', displayName: 'Saved room', preferredSplat: 'splat-full_res',
+      assets: { 'splat-full_res': { path: 'assets/splat-full_res.spz' }, collider: { path: 'assets/collider.glb' } },
       coordinates: { semantics: { metric_scale_factor: 2, ground_plane_offset: 3 } },
     });
     return new Response('asset');
   });
   vi.stubGlobal('fetch', fetcher);
-  expect(await Promise.all([client.ensureDemoWorld(), client.ensureDemoWorld()])).toEqual(['convex-world', 'convex-world']);
+  expect(await Promise.all([client.importLocalWorld('saved-job'), client.importLocalWorld('saved-job')])).toEqual(['convex-world', 'convex-world']);
   expect(imports).toHaveLength(1);
-  expect(imports[0]).toMatchObject({ worldId: DEMO_WORLD_ID, splatFileName: DEMO_SPLAT_FILE, metricScale: 2, groundOffset: 3, reuseExisting: true });
-  expect(fetcher.mock.calls.filter(([url]) => url === `${BUNDLED_ROOM_BASE}manifest.json`)).toHaveLength(1);
-  // A 500k row for this same world must not be mistaken for the full-res bundle.
-  expect(query.mock.calls.every(([, args]) => args.splatFileName === DEMO_SPLAT_FILE)).toBe(true);
+  expect(imports[0]).toMatchObject({ worldId: 'saved-world', splatFileName: 'splat-full_res.spz', metricScale: 2, groundOffset: 3, reuseExisting: true });
+  expect(fetcher.mock.calls.filter(([url]) => url === '/world-assets/saved-job/manifest.json')).toHaveLength(1);
+  // A 500k row for this same world must not be mistaken for the full-res capture.
+  expect(query.mock.calls.every(([, args]) => args.splatFileName === 'splat-full_res.spz')).toBe(true);
   expect(fetcher.mock.calls.every(([url]) => !url.includes('worldlabs.ai'))).toBe(true);
 });
 
@@ -63,8 +68,8 @@ test('ZIP import uses the existing parser and the same Convex import contract', 
 test('failed saved asset reads do not register a ready world and can retry', async () => {
   const { client, imports } = backend();
   vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
-  await expect(client.ensureDemoWorld()).rejects.toThrow('saved room');
-  await expect(client.ensureDemoWorld()).rejects.toThrow('saved room');
+  await expect(client.importLocalWorld('saved-job')).rejects.toThrow('saved room');
+  await expect(client.importLocalWorld('saved-job')).rejects.toThrow('saved room');
   expect(imports).toEqual([]);
 });
 

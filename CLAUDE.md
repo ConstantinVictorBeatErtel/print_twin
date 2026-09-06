@@ -40,21 +40,29 @@ Multiplayer test: open two tabs at `http://localhost:5173/?room=test`, click "jo
 - Keep the demo path (`src/App.tsx`) working at all times; put experiments behind `?feature=` flags.
 
 ## Capture integration
-`src/App.tsx` hosts the Galatea capture entry and three-second demo transition, then
-hands off to `src/WorldApp.tsx` — the first-person room viewer. `src/lib/ConvexProjectClient.ts`
-bridges saved CLI manifests and `readWorldZip` results into Convex storage via
-`api.worlds.importUploaded`. Demo entry opens the stage room bundled at `public/room/`
-(manifest + full-res splat + collider, byte-identical to the `stage-rear-2026-09-05`
-release), with indexed provider-world-ID lookup and duplicate prevention; it does not
-generate from the selected capture. Lookup matches `splatFileName` as well as the world
-ID, so the same room imported at another resolution is not reused in its place. The URL's
-`world` is the Convex ID and default room ID; legacy `job` URLs import through the same
-bridge.
+`src/App.tsx` hosts the capture entry, then hands off to `src/WorldApp.tsx` — the
+first-person room viewer. Everything generates live; there is no bundled/demo room and
+no `?live=1` flag. Picking a photo or video uploads it to Convex storage and calls
+`worlds.startFromMedia` (mutation), which inserts a `generating` world row and schedules
+`internal.worlds.runFromMedia` to call Marble (`world_prompt.type: "image"|"video"`,
+content `{ uri }` pointing at the Convex storage URL), poll the operation, and cache the
+splat/collider/pano into storage — the same `runGenerate` helper `generateFromText` uses.
+`App.tsx` opens `WorldApp` with that world's id immediately; `WorldApp`'s `roomStatus`
+reads the row reactively (`useQuery(api.worlds.list)`) and shows "Building your world…"
+until it flips to `ready`, so the multi-minute generation never blocks the UI. Picking a
+`.zip` instead goes through `src/lib/ConvexProjectClient.ts`, which unpacks
+`readWorldZip` results into Convex storage via `api.worlds.importUploaded` — that path is
+for a world already generated elsewhere, not a stand-in.
+
+A corner "Existing worlds" button (`src/components/ExistingWorlds.tsx`) lists every world
+in Convex (`api.worlds.list`) on both the landing screen and inside the room viewer, so a
+previously generated room can be reopened without regenerating it. The URL's `world` is
+the Convex ID and default room ID; legacy `job` URLs still import through
+`ConvexProjectClient.importLocalWorld`, for captures the CLI saved locally under
+`public/world-assets/` — that is a real bring-your-own-capture path, not a demo.
 
 Root `vite.config.ts` serves only saved `/world-assets/` files, for those legacy `job`
-URLs. `web/src/` is legacy code, not a second active viewer. The bundled room is the only
-room binary in Git; a fresh backend imports it on first entry, and anything else needs the
-saved local assets under `data/worlds/` or a ZIP import.
+URLs. `web/src/` is legacy code, not a second active viewer.
 
 ## The room viewer (`src/WorldApp.tsx`)
 Navigation is first-person (`LocalWalk.tsx`: pointer lock, WASD/arrows, Q/E, Shift) — there
@@ -134,16 +142,7 @@ to keep three.js out of the Convex bundle). `convex/pipeline-modules.d.ts` types
 modules. Progress is patched onto the asset row, so the client watches it with `useQuery`
 instead of polling. STL export runs in the browser (`src/lib/stlExport.ts`).
 
-**The demo does not generate.** `convex/demoAssets.ts` holds four objects that were
-generated for real earlier — couch, table, flower vase, dinosaur — keyed by word-boundary
-keywords (`sofa`, `desk`, `flowers`, `t-rex`, …; first one named in the sentence wins). When
-`startSketch` matches one it inserts a normal asset row and walks it through the real stages
-on a fixed clock — image 0s, cutout 2.5s, mesh 5s, pulling the mesh 7.5s, ready at 10s — then
-points the row at the saved GLB, so the card, the orientation solve and the auto-placement all
-run unchanged. Anything else still generates for real, and `?live=1` turns the stand-ins off
-entirely (the demo path then needs the keys below). The curated asset IDs are per-deployment;
-a deployment without them falls back to the newest ready library object matching the same
-keywords, and failing that the card says the demo object is missing.
+Every sketch generates for real — there is no demo stand-in and no `?live=1` flag.
 
 Needs `FAL_KEY` and `TRIPO_API_KEY` in the Convex environment. The Tripo endpoint here is
 `api.tripo3d.ai/v2/openapi`, not the `openapi.tripo3d.ai/v3` one used by the older

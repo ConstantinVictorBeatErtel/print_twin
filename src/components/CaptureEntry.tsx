@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-export function CaptureEntry({ onCreate }: { onCreate: () => void }) {
+export function CaptureEntry({ onCreate }: { onCreate: (file: File) => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [error, setError] = useState('');
@@ -72,8 +72,8 @@ export function CaptureEntry({ onCreate }: { onCreate: () => void }) {
       </button>}
       {!file && <div className="capture-actions"><button type="button" onClick={() => photoRef.current?.click()}>Take photo</button><button type="button" onClick={() => videoRef.current?.click()}>Record video</button><button type="button" onClick={() => zipRef.current?.click()}>Upload ZIP</button></div>}
       {error && <p className="capture-error" role="alert">{error}</p>}
-      <button type="button" className="capture-create" onClick={onCreate}>{file ? "Create my world" : "Explore demo room"}</button>
-      <p className="capture-footnote">Demo preview · Every capture opens our existing world.</p>
+      <button type="button" className="capture-create" disabled={!file} onClick={() => file && onCreate(file)}>Create my world</button>
+      <p className="capture-footnote">A photo or video builds a real World Labs splat; a ZIP imports a world you already generated.</p>
     </div>
   </main>;
 }

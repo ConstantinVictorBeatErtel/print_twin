@@ -31,23 +31,19 @@ continues to use its saved splat and collider. The meshes are not yet watertight
 
 ## Setup
 
-The Galatea entry flow and original viewer now live together in `src/`. Select a
-photo, short video, or ZIP, then press **Create my world**. After a three-second
-transition, the saved `hackathon-stage-complete-02` room opens in the original app,
-including its object placement and multiplayer controls. Selected captures stay in
-the browser for this demo; they do not trigger World Labs generation. Native phone
-photo/video capture buttons are also available.
+The capture entry flow and room viewer live together in `src/`. Select a photo, short
+video, or ZIP, then press **Create my world**. A photo or video uploads to Convex
+storage and starts a real World Labs (Marble) generation — the room viewer opens
+immediately and shows "Building your world…" while it finishes in the background
+(usually 1–5 minutes). A `.zip` (a world already generated elsewhere, e.g. via the
+capture CLI or a Marble export) is unpacked in the browser and imported with no wait
+and no provider call. Native phone photo/video capture buttons are also available.
 
-`ConvexProjectClient` imports the saved manifest and assets into Convex storage on
-first use, which can extend the initial wait. Later entries reuse that world. The
-URL becomes `?world=<Convex ID>` so refresh resumes the same room. Legacy `?job=...`
-links import saved local worlds into the same app.
-
-For the first import, put assets in `data/worlds/hackathon-stage-complete-02/`
-(see the latest room download below). Alternatively, choose **Open existing app /
-import world ZIP** and use **Upload world .zip** to import the downloaded archive.
-That sidebar action reads the actual ZIP contents through the same Convex client;
-the entry screen's ZIP selection keeps the requested demo behavior.
+The URL becomes `?world=<Convex ID>` so refresh resumes the same room. The **Existing
+worlds** corner button (on the entry screen and inside the room) lists every world
+already generated and stored in Convex, so you can reopen one without generating again.
+Legacy `?job=...` links still import saved local worlds (from the capture CLI) into the
+same app via `ConvexProjectClient`.
 
 ```sh
 npm install

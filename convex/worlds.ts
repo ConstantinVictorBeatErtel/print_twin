@@ -1,7 +1,8 @@
 // World Labs Marble: generate → poll → cache assets in Convex storage.
 import { v } from "convex/values";
-import { action, internalMutation, mutation, query } from "./_generated/server";
+import { action, internalAction, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 const BASE = "https://api.worldlabs.ai/marble/v1";
@@ -66,6 +67,42 @@ export const update = internalMutation({
 });
 
 /**
+ * POST worlds:generate, poll the operation, then download and cache every asset the
+ * viewer needs. Shared by every generation path (text, image, video) — they differ
+ * only in the `world_prompt` they submit.
+ */
+async function runGenerate(ctx: ActionCtx, id: Id<"worlds">, worldPrompt: unknown, displayName: string, model: string) {
+  const op = await post("worlds:generate", { display_name: displayName.slice(0, 64), model, world_prompt: worldPrompt });
+  await ctx.runMutation(internal.worlds.update, { id, patch: { operationId: op.operation_id } });
+
+  let opState = op;
+  while (!opState.done) {
+    await sleep(5000);
+    opState = await get(`operations/${op.operation_id}`);
+  }
+  const worldId: string = opState.response.world_id;
+  const world = await get(`worlds/${worldId}`);
+
+  const spzUrl: string = world.assets.splats.spz_urls["500k"] ?? world.assets.splats.spz_urls.full_res;
+  const colliderUrl: string | undefined = world.assets.mesh?.collider_mesh_url;
+  const panoUrl: string | undefined = world.assets.imagery?.pano_url;
+  const meta = world.assets.splats.semantics_metadata ?? {};
+
+  // Cache everything — signed URLs expire and venue Wi-Fi is unreliable.
+  const splatStorageId = await ctx.storage.store(await (await fetch(spzUrl)).blob());
+  const colliderStorageId = colliderUrl ? await ctx.storage.store(await (await fetch(colliderUrl)).blob()) : undefined;
+  const panoStorageId = panoUrl ? await ctx.storage.store(await (await fetch(panoUrl)).blob()) : undefined;
+
+  await ctx.runMutation(internal.worlds.update, {
+    id,
+    patch: {
+      status: "ready", worldId, spzUrl, splatStorageId, colliderStorageId, panoStorageId,
+      metricScale: meta.metric_scale_factor, groundOffset: meta.ground_plane_offset,
+    },
+  });
+}
+
+/**
  * Generate a world from text. Runs as one long action (Marble ~1–5 min; actions get 10 min).
  * Usage from the client: const gen = useAction(api.worlds.generateFromText); gen({ prompt, model: "marble-1.0-draft" })
  */
@@ -76,42 +113,59 @@ export const generateFromText = action({
   handler: async (ctx, { prompt, model = "marble-1.0-draft", name }): Promise<Id<"worlds">> => {
     const id = await ctx.runMutation(internal.worlds.create, { name: name ?? prompt.slice(0, 40), prompt, model });
     try {
-      const op = await post("worlds:generate", {
-        display_name: (name ?? prompt).slice(0, 64),
-        model,
-        world_prompt: { type: "text", text_prompt: prompt },
-      });
-      await ctx.runMutation(internal.worlds.update, { id, patch: { operationId: op.operation_id } });
-
-      let opState = op;
-      while (!opState.done) {
-        await sleep(5000);
-        opState = await get(`operations/${op.operation_id}`);
-      }
-      const worldId: string = opState.response.world_id;
-      const world = await get(`worlds/${worldId}`);
-
-      const spzUrl: string = world.assets.splats.spz_urls["500k"] ?? world.assets.splats.spz_urls.full_res;
-      const colliderUrl: string | undefined = world.assets.mesh?.collider_mesh_url;
-      const panoUrl: string | undefined = world.assets.imagery?.pano_url;
-      const meta = world.assets.splats.semantics_metadata ?? {};
-
-      // Cache everything — signed URLs expire and venue Wi-Fi is unreliable.
-      const splatStorageId = await ctx.storage.store(await (await fetch(spzUrl)).blob());
-      const colliderStorageId = colliderUrl ? await ctx.storage.store(await (await fetch(colliderUrl)).blob()) : undefined;
-      const panoStorageId = panoUrl ? await ctx.storage.store(await (await fetch(panoUrl)).blob()) : undefined;
-
-      await ctx.runMutation(internal.worlds.update, {
-        id,
-        patch: {
-          status: "ready", worldId, spzUrl, splatStorageId, colliderStorageId, panoStorageId,
-          metricScale: meta.metric_scale_factor, groundOffset: meta.ground_plane_offset,
-        },
-      });
+      await runGenerate(ctx, id, { type: "text", text_prompt: prompt }, name ?? prompt, model);
       return id;
     } catch (e: any) {
       await ctx.runMutation(internal.worlds.update, { id, patch: { status: "failed", error: String(e?.message ?? e) } });
       throw e;
+    }
+  },
+});
+
+/**
+ * Start a world generation from an uploaded photo or short video: insert the row and
+ * hand its id back immediately (Marble takes 1–5 min), then run the Marble call in a
+ * scheduled action. The client watches the row reactively via `worlds.list`, the same
+ * pattern the sketch pipeline uses — never block the caller on a multi-minute request.
+ */
+export const startFromMedia = mutation({
+  args: {
+    storageId: v.id("_storage"),
+    kind: v.union(v.literal("image"), v.literal("video")),
+    name: v.optional(v.string()),
+    model: v.optional(v.string()),
+  },
+  handler: async (ctx, { storageId, kind, name, model }): Promise<Id<"worlds">> => {
+    const displayName = name?.trim() || (kind === "video" ? "My captured room" : "My room");
+    const chosenModel = model ?? "marble-1.0-draft";
+    const id = await ctx.db.insert("worlds", { name: displayName, prompt: "", model: chosenModel, status: "generating" });
+    await ctx.scheduler.runAfter(0, internal.worlds.runFromMedia, { id, storageId, kind, model: chosenModel, name: displayName });
+    return id;
+  },
+});
+
+export const runFromMedia = internalAction({
+  args: {
+    id: v.id("worlds"),
+    storageId: v.id("_storage"),
+    kind: v.union(v.literal("image"), v.literal("video")),
+    model: v.string(),
+    name: v.string(),
+  },
+  handler: async (ctx, { id, storageId, kind, model, name }): Promise<void> => {
+    try {
+      // Convex storage URLs are public, so Marble can fetch the upload directly —
+      // no separate media-assets:prepare_upload round trip needed.
+      const mediaUrl = await ctx.storage.getUrl(storageId);
+      if (!mediaUrl) throw new Error("The uploaded file is no longer in storage. Please try again.");
+      // The reference object's discriminator key is `source`, and the prompt field
+      // itself is named after the type (`image_prompt` / `video_prompt`) — not the
+      // generic `content` the text prompt's shape might suggest. See ImagePrompt /
+      // VideoPrompt in the Marble OpenAPI spec.
+      const promptField = kind === "image" ? "image_prompt" : "video_prompt";
+      await runGenerate(ctx, id, { type: kind, [promptField]: { source: "uri", uri: mediaUrl } }, name, model);
+    } catch (e: any) {
+      await ctx.runMutation(internal.worlds.update, { id, patch: { status: "failed", error: String(e?.message ?? e) } });
     }
   },
 });
