@@ -326,7 +326,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
 
   return <div className="local-editor">
     <header className="viewer-toolbar" inert={!!drawing}>
-      <div className="brand"><span className="brand-mark">✳</span><div>doodleforge<small>Your room, reimagined</small></div></div>
+      <div className="brand"><span className="brand-mark">◎</span><div>doodleforge<small>Your room, reimagined</small></div></div>
       <nav aria-label="Room controls">
         <button disabled={!!drawing || !paused} onClick={() => { cancel(); resumeWalking(); }}>Resume look</button>
         <button className="primary" disabled={!!drawing || !canDraw}
