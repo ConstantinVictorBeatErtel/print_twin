@@ -3,14 +3,14 @@ import { afterEach, expect, test, vi } from 'vitest';
 import type { ConvexReactClient } from 'convex/react';
 import { getFunctionName } from 'convex/server';
 import { zipSync, strToU8 } from 'fflate';
-import { ConvexProjectClient, DEMO_JOB, DEMO_WORLD_ID } from './ConvexProjectClient';
+import { BUNDLED_ROOM_BASE, ConvexProjectClient, DEMO_SPLAT_FILE, DEMO_WORLD_ID } from './ConvexProjectClient';
 import { worldTransform } from './worldTransform';
 
 afterEach(() => vi.unstubAllGlobals());
 
 function backend(existing = false) {
   const imports: unknown[] = [];
-  const query = vi.fn(async () => existing ? { _id: 'convex-world', splatUrl: 'https://storage.test/splat' } : null);
+  const query = vi.fn(async (_reference: unknown, _args: { worldId: string; splatFileName?: string }) => existing ? { _id: 'convex-world', splatUrl: 'https://storage.test/splat' } : null);
   const mutation = vi.fn(async (reference, args) => {
     if (getFunctionName(reference) === 'worlds:generateUploadUrl') return 'https://storage.test/upload';
     imports.push(args);
@@ -28,13 +28,13 @@ test('an existing hosted demo needs no local files or upload', async () => {
   expect(mutation).not.toHaveBeenCalled();
 });
 
-test('concurrent demo entries import one manifest with the original metadata', async () => {
-  const { client, imports } = backend();
+test('concurrent demo entries import the bundled room once, with its original metadata', async () => {
+  const { client, imports, query } = backend();
   const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
     if (options?.method === 'POST') return Response.json({ storageId: 'storage-id' });
     if (url.endsWith('manifest.json')) return Response.json({
-      worldId: DEMO_WORLD_ID, displayName: 'Demo room',
-      assets: { 'splat-500k': { path: 'assets/splat-500k.spz' }, collider: { path: 'assets/collider.glb' } },
+      worldId: DEMO_WORLD_ID, displayName: 'Demo room', preferredSplat: 'splat-full_res',
+      assets: { 'splat-full_res': { path: `assets/${DEMO_SPLAT_FILE}` }, collider: { path: 'assets/collider.glb' } },
       coordinates: { semantics: { metric_scale_factor: 2, ground_plane_offset: 3 } },
     });
     return new Response('asset');
@@ -42,8 +42,10 @@ test('concurrent demo entries import one manifest with the original metadata', a
   vi.stubGlobal('fetch', fetcher);
   expect(await Promise.all([client.ensureDemoWorld(), client.ensureDemoWorld()])).toEqual(['convex-world', 'convex-world']);
   expect(imports).toHaveLength(1);
-  expect(imports[0]).toMatchObject({ worldId: DEMO_WORLD_ID, splatFileName: 'splat-500k.spz', metricScale: 2, groundOffset: 3, reuseExisting: true });
-  expect(fetcher.mock.calls.filter(([url]) => url === `/world-assets/${DEMO_JOB}/manifest.json`)).toHaveLength(1);
+  expect(imports[0]).toMatchObject({ worldId: DEMO_WORLD_ID, splatFileName: DEMO_SPLAT_FILE, metricScale: 2, groundOffset: 3, reuseExisting: true });
+  expect(fetcher.mock.calls.filter(([url]) => url === `${BUNDLED_ROOM_BASE}manifest.json`)).toHaveLength(1);
+  // A 500k row for this same world must not be mistaken for the full-res bundle.
+  expect(query.mock.calls.every(([, args]) => args.splatFileName === DEMO_SPLAT_FILE)).toBe(true);
   expect(fetcher.mock.calls.every(([url]) => !url.includes('worldlabs.ai'))).toBe(true);
 });
 

@@ -30,6 +30,7 @@ asset-output/
 tripo-output/
 # Bundled room geometry and starter object
 public/room/*
+!public/room/manifest.json
 !public/room/assets/
 public/room/assets/*
 !public/room/assets/splat-full_res.spz

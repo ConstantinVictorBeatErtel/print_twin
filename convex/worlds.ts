@@ -25,12 +25,18 @@ export const list = query({
   },
 });
 
-/** Resolve an already imported provider world before uploading its files again. */
+/**
+ * Resolve an already imported provider world before uploading its files again.
+ * Pass `splatFileName` to require a resolution: the same world imported at 500k is
+ * not a substitute for the full-res one the caller is about to upload.
+ */
 export const byWorldId = query({
-  args: { worldId: v.string() },
-  handler: async (ctx, { worldId }) => {
-    const world = await ctx.db.query('worlds').withIndex('by_worldId', (q) => q.eq('worldId', worldId))
-      .filter((q) => q.eq(q.field('status'), 'ready')).first();
+  args: { worldId: v.string(), splatFileName: v.optional(v.string()) },
+  handler: async (ctx, { worldId, splatFileName }) => {
+    let candidates = ctx.db.query('worlds').withIndex('by_worldId', (q) => q.eq('worldId', worldId))
+      .filter((q) => q.eq(q.field('status'), 'ready'));
+    if (splatFileName) candidates = candidates.filter((q) => q.eq(q.field('splatFileName'), splatFileName));
+    const world = await candidates.first();
     return world ? { _id: world._id, splatUrl: world.splatStorageId ? await ctx.storage.getUrl(world.splatStorageId) : null } : null;
   },
 });
@@ -137,8 +143,11 @@ export const importUploaded = mutation({
   },
   handler: async (ctx, a): Promise<Id<"worlds">> => {
     if (a.reuseExisting && a.worldId) {
-      const existing = await ctx.db.query('worlds').withIndex('by_worldId', (q) => q.eq('worldId', a.worldId))
-        .filter((q) => q.eq(q.field('status'), 'ready')).first();
+      let candidates = ctx.db.query('worlds').withIndex('by_worldId', (q) => q.eq('worldId', a.worldId))
+        .filter((q) => q.eq(q.field('status'), 'ready'));
+      // Same rule as byWorldId: only a row holding this same splat counts as already imported.
+      if (a.splatFileName) candidates = candidates.filter((q) => q.eq(q.field('splatFileName'), a.splatFileName));
+      const existing = await candidates.first();
       if (existing?.splatStorageId && await ctx.storage.getUrl(existing.splatStorageId)) return existing._id;
     }
     return ctx.db.insert("worlds", {

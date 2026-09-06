@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as T from "three";
 import {
   rasterizeInk, maskBox, maskEdge, distanceTransform, alignToBox, chamfer,
-  matchSketchYaw, composeYaw, inkFrame,
+  matchSketchYaw, composeYaw, inkFrame, viewYaws,
 } from "../src/lib/sketchOrientation.ts";
 
 /** A 16:9 anchor whose ink is the outline of `shape`, drawn at yaw `truth`. */
@@ -121,5 +121,37 @@ test("yaw composes about the object's own up, so it stays standing on a sloped s
     const up = new T.Vector3(0, 1, 0)
       .applyQuaternion(new T.Quaternion().setFromEuler(new T.Euler(...composeYaw(rotation, yaw))));
     assert.ok(up.distanceTo(normal) < 1e-6, `yaw ${yaw} tilted the object off the surface`);
+  }
+});
+
+test("a windowed sweep searches only its arc, and never returns a yaw outside it", () => {
+  const truth = Math.PI / 2;
+  const { width, height } = inkFrame(anchor([]));
+  const a = anchor(strokesFor(ell(truth, width, height)));
+  const render = (yaws, w, h) => yaws.map((yaw) => ell(yaw, w, h));
+
+  // Centred on the truth: the refinement should land on it.
+  const span = Math.PI / 4;
+  const on = matchSketchYaw(a, render, { baseSize: .5, window: { center: truth, span } });
+  assert.equal(on.confident, true, "a windowed sweep trusts the caller's sector");
+  assert.ok(Math.abs(on.yaw - truth) <= span / 2 + 1e-9, `${on.yaw} outside the window`);
+
+  // Centred somewhere wrong: it must still stay inside the window rather than quietly
+  // rediscovering the true yaw elsewhere on the circle.
+  const off = Math.PI;
+  const wrong = matchSketchYaw(a, render, { baseSize: .5, window: { center: off, span } });
+  assert.ok(Math.abs(wrong.yaw - off) <= span / 2 + 1e-9, `${wrong.yaw} escaped the window`);
+  assert.ok(Math.abs(wrong.yaw - truth) > span / 2, "the window was silently widened to the true yaw");
+});
+
+test("view numbers map onto evenly spaced yaws around the circle", () => {
+  for (const count of [8, 16]) {
+    const yaws = viewYaws(count);
+    assert.equal(yaws.length, count);
+    assert.equal(yaws[0], 0, "view 1 is the unrotated pose");
+    for (let i = 1; i < count; i++) {
+      assert.ok(Math.abs((yaws[i] - yaws[i - 1]) - 2 * Math.PI / count) < 1e-9, `gap before view ${i + 1}`);
+    }
+    assert.ok(yaws.every((y) => y >= 0 && y < 2 * Math.PI));
   }
 });

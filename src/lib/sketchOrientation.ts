@@ -20,6 +20,7 @@ export type YawMatch = { yaw: number; score: number; confident: boolean; targetS
 export type RenderSilhouettes = (yaws: number[], width: number, height: number) => Mask[];
 
 const STEPS = 36;        // 10 degrees; refined below
+const WINDOW_STEPS = 7;  // samples across a vision-model sector, endpoints included
 const RESOLUTION = 192;  // long edge, in pixels
 // Below this relative gap between the best and the typical yaw, the object is rotationally
 // ambiguous (a vase, a ball, a sphere-ish blob) and any winner is noise. Keep facing the camera.
@@ -178,11 +179,17 @@ export function boundsToBox(bounds: DrawingBounds, width: number, height: number
  * The yaw, about the anchor's surface normal, whose silhouette best matches the ink — plus the
  * size that yaw implies. Returns `confident: false` when no yaw stands out, which the caller
  * should read as "leave it facing the camera".
+ *
+ * Pass `window` to search an arc instead of the full circle. That is the vision-model path: the
+ * model has already picked which way the object faces, so this only has to find the best yaw
+ * inside that sector, and the confidence gate is skipped — the gate exists to catch a
+ * rotationally ambiguous object, a question already answered before we got here.
  */
 export function matchSketchYaw(
   anchor: DrawingAnchor,
   renderSilhouettes: RenderSilhouettes,
-  { steps = STEPS, resolution = RESOLUTION, baseSize = 1 }: { steps?: number; resolution?: number; baseSize?: number } = {},
+  { steps = STEPS, resolution = RESOLUTION, baseSize = 1, window }:
+    { steps?: number; resolution?: number; baseSize?: number; window?: { center: number; span: number } } = {},
 ): YawMatch | null {
   if (!anchor.strokes?.length) return null;
   const { width, height } = inkFrame(anchor, resolution);
@@ -201,10 +208,20 @@ export function matchSketchYaw(
     });
   };
 
-  const coarse = score(Array.from({ length: steps }, (_, i) => i * 2 * Math.PI / steps));
+  // A windowed sweep sits inside its arc and stays there: the endpoints are included so a
+  // winner on the boundary is still reachable, and nothing outside can ever be returned.
+  const coarseYaws = window
+    ? Array.from({ length: WINDOW_STEPS }, (_, i) =>
+        window.center - window.span / 2 + (i * window.span) / (WINDOW_STEPS - 1))
+    : Array.from({ length: steps }, (_, i) => i * 2 * Math.PI / steps);
+  const coarse = score(coarseYaws);
   const usable = coarse.filter((c) => Number.isFinite(c.score));
-  if (usable.length < 3) return null;
+  if (usable.length < (window ? 1 : 3)) return null;
   const best = usable.reduce((a, b) => (b.score < a.score ? b : a));
+
+  if (window) {
+    return { yaw: best.yaw, score: best.score, confident: true, targetSize: sizeFrom(best.box, inkBox, baseSize) };
+  }
 
   // Refine around the coarse winner, then judge confidence on the *coarse* sweep — a local
   // refinement always improves the score and would otherwise fake certainty.
@@ -215,16 +232,27 @@ export function matchSketchYaw(
   const typical = median(usable.map((c) => c.score));
   const confident = typical > 0 && (typical - best.score) / typical >= MIN_CONFIDENCE;
 
-  // The winning silhouette also sizes the object better than fitDrawing's 8-corner AABB search,
-  // which overestimates anything that is not box-shaped.
-  let targetSize = baseSize;
-  if (winner.box) {
-    const inkW = inkBox.maxX - inkBox.minX + 1, inkH = inkBox.maxY - inkBox.minY + 1;
-    const silW = winner.box.maxX - winner.box.minX + 1, silH = winner.box.maxY - winner.box.minY + 1;
-    const ratio = Math.sqrt((inkW / silW) * (inkH / silH));
-    if (Number.isFinite(ratio) && ratio > 0) targetSize = baseSize * Math.min(4, Math.max(.25, ratio));
-  }
-  return { yaw: winner.yaw, score: winner.score, confident, targetSize };
+  return { yaw: winner.yaw, score: winner.score, confident, targetSize: sizeFrom(winner.box, inkBox, baseSize) };
+}
+
+/**
+ * The winning silhouette also sizes the object better than fitDrawing's 8-corner AABB search,
+ * which overestimates anything that is not box-shaped.
+ */
+function sizeFrom(box: Box | null, inkBox: Box, baseSize: number): number {
+  if (!box) return baseSize;
+  const inkW = inkBox.maxX - inkBox.minX + 1, inkH = inkBox.maxY - inkBox.minY + 1;
+  const silW = box.maxX - box.minX + 1, silH = box.maxY - box.minY + 1;
+  const ratio = Math.sqrt((inkW / silW) * (inkH / silH));
+  return Number.isFinite(ratio) && ratio > 0 ? baseSize * Math.min(4, Math.max(.25, ratio)) : baseSize;
+}
+
+/**
+ * What each numbered view on the contact sheet means, in radians about the object's own up
+ * axis. The vision model answers with an index into this; nothing else defines the mapping.
+ */
+export function viewYaws(views: number): number[] {
+  return Array.from({ length: views }, (_, i) => i * 2 * Math.PI / views);
 }
 
 /**

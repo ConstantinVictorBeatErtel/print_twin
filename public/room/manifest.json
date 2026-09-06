@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "provider": "worldlabs",
+  "worldId": "262dd7ba-d156-46a1-8445-f62bc60e1265",
+  "displayName": "Print Twin stage with rear screen",
+  "model": "marble-1.1-plus",
+  "marbleUrl": "https://marble.worldlabs.ai/world/262dd7ba-d156-46a1-8445-f62bc60e1265",
+  "release": "stage-rear-2026-09-05",
+  "caption": "The scene is a spacious hackathon hall, rendered in a realistic style with ample indoor daylight, creating a productive and open atmosphere. The hall features a large open layout with light wooden tables and white and dark gray chairs arranged in rows, facing a dark alcove at the far end of the room. The ceiling is characterized by white trusses and exposed piping, from which linear black light fixtures are suspended, providing overhead illumination. Several white support columns are strategically placed throughout the room, upholding the structure. Along the side walls, multiple rectangular windows allow natural light to stream in, offering glimpses of the outside. The floor is a concrete surface with a patterned, worn texture. At the front of the room, opposite the dark alcove, there is a raised stage with a large, switched-off black television resting on a white cabinet. Flanking the television are two potted trees and two speakers, positioned on tripods. Above the television, an exit door is visible, marked with a green EXIT sign. Near the stage, several green armless chairs are arranged. Black backpacks are placed under some of the tables throughout the hall. The tables are equipped with laptops and tablets, indicating a ready-to-use workspace. ",
+  "preferredSplat": "splat-full_res",
+  "coordinates": {
+    "appFrame": "right-handed; +Y up; camera forward -Z",
+    "matrixOrder": "column-major",
+    "rawFrame": "marble_raw_opencv",
+    "semantics": {
+      "metric_scale_factor": 2.470399856567383,
+      "ground_plane_offset": 1.702193021774292
+    },
+    "splatToApp": [
+      2.470399856567383,
+      0,
+      0,
+      0,
+      0,
+      -2.470399856567383,
+      0,
+      0,
+      0,
+      0,
+      -2.470399856567383,
+      0,
+      0,
+      1.702193021774292,
+      0,
+      1
+    ],
+    "colliderToApp": null,
+    "colliderAlignment": "unverified",
+    "worldTransformVersion": 1,
+    "calibration": "unmeasured",
+    "metricMetadataAvailable": true
+  },
+  "assets": {
+    "splat-full_res": {
+      "path": "assets/splat-full_res.spz",
+      "bytes": 37339053,
+      "sha256": "eef51782526b91d5a3e2e4c9ec1c53d9b899a71c87799584c37a577bc7d5bbfb",
+      "contentType": "application/octet-stream"
+    },
+    "collider": {
+      "path": "assets/collider.glb",
+      "bytes": 5319836,
+      "sha256": "41d374c7a2756d40d33ac136da49eb329fe77683d9e1b4ce169c7b7e22cb20ad",
+      "contentType": "model/gltf-binary"
+    }
+  }
+}

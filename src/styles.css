@@ -221,7 +221,8 @@ button.primary:hover:not(:disabled) { background: #e4ffcf; border-color: #e4ffcf
 .armed-hud .key-legend { margin: 0; }
 
 .paused-hint { position: absolute; top: 90px; left: 50%; transform: translateX(-50%); color: #e8eee4; background: #182019b8; backdrop-filter: blur(12px); padding: 8px 14px; border-radius: 20px; font-size: 11px; text-align: center; pointer-events: none; }
-.generation-card { position: absolute; bottom: 90px; left: 22px; width: 380px; max-width: calc(100% - 44px); padding: 16px; display: flex; align-items: flex-start; gap: 13px; background: #171e19f2; border: 1px solid #ffffff20; backdrop-filter: blur(20px); box-shadow: 0 12px 40px #0005; border-radius: 16px; font-size: 12px; }
+.generation-stack { position: absolute; bottom: 90px; left: 22px; width: 380px; max-width: calc(100% - 44px); display: flex; flex-direction: column-reverse; gap: 10px; max-height: calc(100vh - 160px); overflow-y: auto; }
+.generation-card { width: 100%; padding: 16px; display: flex; align-items: flex-start; gap: 13px; background: #171e19f2; border: 1px solid #ffffff20; backdrop-filter: blur(20px); box-shadow: 0 12px 40px #0005; border-radius: 16px; font-size: 12px; }
 .generation-card img { width: 60px; height: 60px; border-radius: 8px; object-fit: contain; background: #e7ebdf; }
 .generation-content { flex: 1; min-width: 0; }
 .generation-content p { color: #b8c4b2; font-size: 11px; margin: 6px 0 10px; overflow-wrap: anywhere; }

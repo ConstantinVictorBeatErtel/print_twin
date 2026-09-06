@@ -5,6 +5,14 @@ import { readWorldZip, type ZipEntry, type ZipWorld } from './worldZip';
 
 export const DEMO_JOB = 'hackathon-stage-complete-02';
 export const DEMO_WORLD_ID = '262dd7ba-d156-46a1-8445-f62bc60e1265';
+/**
+ * The demo room ships in the repo (`public/room/`), so a fresh clone opens it with
+ * no `data/worlds/` capture and no provider call. Those two files are byte-identical
+ * to the newest room release, `stage-rear-2026-09-05`.
+ */
+export const BUNDLED_ROOM_BASE = '/room/';
+/** The bundled splat, and the variant the demo world must already hold to be reused. */
+export const DEMO_SPLAT_FILE = 'splat-full_res.spz';
 
 type Manifest = {
   worldId?: string;
@@ -24,9 +32,11 @@ export class ConvexProjectClient {
 
   ensureDemoWorld(): Promise<Id<'worlds'>> {
     return this.once(DEMO_JOB, async () => {
-      const existing = await this.convex.query(api.worlds.byWorldId, { worldId: DEMO_WORLD_ID });
+      // Match the splat too: an earlier import of the same world at 500k must not
+      // stand in for the full-res one the demo now opens with.
+      const existing = await this.convex.query(api.worlds.byWorldId, { worldId: DEMO_WORLD_ID, splatFileName: DEMO_SPLAT_FILE });
       if (existing?.splatUrl) return existing._id;
-      return this.loadLocalWorld(DEMO_JOB);
+      return this.loadSavedWorld(BUNDLED_ROOM_BASE);
     });
   }
 
@@ -47,15 +57,26 @@ export class ConvexProjectClient {
     return promise;
   }
 
-  private async loadLocalWorld(job: string): Promise<Id<'worlds'>> {
+  private loadLocalWorld(job: string): Promise<Id<'worlds'>> {
     if (!/^[a-zA-Z0-9_-]+$/.test(job)) throw new Error('Invalid saved room reference.');
-    const base = `/world-assets/${job}/`;
+    return this.loadSavedWorld(`/world-assets/${job}/`);
+  }
+
+  /** Import a manifest + its assets, whether they are bundled in the app or saved by the CLI. */
+  private async loadSavedWorld(base: string): Promise<Id<'worlds'>> {
     const response = await fetch(`${base}manifest.json`);
     if (!response.ok) throw new Error('The saved room is not available. Import its world ZIP from the existing app, then try again.');
     const manifest = await response.json() as Manifest;
     if (!manifest.assets) throw new Error('The saved room manifest has no assets.');
+    // The manifest's own pick first, the same order readWorldZip uses. The bundled
+    // room names full_res; a CLI capture names 500k.
+    const splatKey = [manifest.preferredSplat, 'splat-500k', 'splat-full_res', 'splat-150k', 'splat-100k']
+      .find((key) => key && manifest.assets?.[key]) ?? 'splat-100k';
+    const splatFileName = manifest.assets[splatKey]?.path.split('/').pop();
     if (manifest.worldId) {
-      const existing = await this.convex.query(api.worlds.byWorldId, { worldId: manifest.worldId });
+      // Same world at a different resolution is a different import: reusing the 500k
+      // row here would silently keep serving it after the bundle moved to full_res.
+      const existing = await this.convex.query(api.worlds.byWorldId, { worldId: manifest.worldId, splatFileName });
       if (existing?.splatUrl) return existing._id;
     }
     const readAsset = async (key: string): Promise<ZipEntry | undefined> => {
@@ -66,7 +87,6 @@ export class ConvexProjectClient {
       if (!asset.ok) throw new Error(`Unable to read saved asset: ${path}`);
       return { name: path.slice('assets/'.length), blob: await asset.blob() };
     };
-    const splatKey = manifest.assets['splat-500k'] ? 'splat-500k' : manifest.preferredSplat ?? 'splat-100k';
     const [splat, collider, pano] = await Promise.all([
       readAsset(splatKey), readAsset('collider'), readAsset('panorama'),
     ]);

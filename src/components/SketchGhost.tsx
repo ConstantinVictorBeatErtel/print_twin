@@ -39,7 +39,10 @@ export function SketchGhost({ anchor, image }: { anchor: DrawingAnchor; image: s
   // matters — the PNG is ink on transparency, so the alpha channel is doing the cutting out,
   // not the opacity. `depthWrite` stays off so the quad never occludes what is behind it.
   if (!texture) return null;
-  return <mesh geometry={geometry}>
+  // Tagged so DrawingBridge can hide every hanging ghost while it captures a *new* sketch's
+  // reference frame — otherwise an earlier, still-generating sketch's ink (same colour, same
+  // "interpret these marks" prompt) bleeds into the next one's images.
+  return <mesh geometry={geometry} userData={{ sketchGhost: true }}>
     <meshBasicMaterial map={texture} transparent opacity={1} depthWrite={false}
       side={THREE.DoubleSide} toneMapped={false} />
   </mesh>;

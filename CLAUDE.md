@@ -27,6 +27,7 @@ npm run world -- credits                           # World Labs CLI (needs WORLD
 npm test                                           # capture CLI + Convex/client integration tests
 npx convex dev                     # first run: login + create deployment, writes .env.local
 npx convex env set WLT_API_KEY ... ; npx convex env set TRIPO_API_KEY ... ; npx convex env set MINT_API_KEY ...
+npx convex env set OPENROUTER_API_KEY ...          # optional: sketch orientation (see below)
 npm run dev                        # convex dev + vite
 ```
 Multiplayer test: open two tabs at `http://localhost:5173/?room=test`, click "join multiplayer" in both.
@@ -42,14 +43,18 @@ Multiplayer test: open two tabs at `http://localhost:5173/?room=test`, click "jo
 `src/App.tsx` hosts the Galatea capture entry and three-second demo transition, then
 hands off to `src/WorldApp.tsx` — the first-person room viewer. `src/lib/ConvexProjectClient.ts`
 bridges saved CLI manifests and `readWorldZip` results into Convex storage via
-`api.worlds.importUploaded`. Demo entry reuses the saved stage world, with indexed
-provider-world-ID lookup and duplicate prevention; it does not generate from the selected
-capture. The URL's `world` is the Convex ID and default room ID; legacy `job` URLs import
-through the same bridge.
+`api.worlds.importUploaded`. Demo entry opens the stage room bundled at `public/room/`
+(manifest + full-res splat + collider, byte-identical to the `stage-rear-2026-09-05`
+release), with indexed provider-world-ID lookup and duplicate prevention; it does not
+generate from the selected capture. Lookup matches `splatFileName` as well as the world
+ID, so the same room imported at another resolution is not reused in its place. The URL's
+`world` is the Convex ID and default room ID; legacy `job` URLs import through the same
+bridge.
 
-Root `vite.config.ts` serves only saved `/world-assets/` files. `web/src/` is legacy code,
-not a second active viewer. A fresh backend needs the saved local assets or a ZIP import;
-neither backend data nor room binaries are in Git.
+Root `vite.config.ts` serves only saved `/world-assets/` files, for those legacy `job`
+URLs. `web/src/` is legacy code, not a second active viewer. The bundled room is the only
+room binary in Git; a fresh backend imports it on first entry, and anything else needs the
+saved local assets under `data/worlds/` or a ZIP import.
 
 ## The room viewer (`src/WorldApp.tsx`)
 Navigation is first-person (`LocalWalk.tsx`: pointer lock, WASD/arrows, Q/E, Shift) — there
@@ -89,13 +94,33 @@ Q/E — do not remove that guard.
   into the real object in the same spot. `arm`/`PlacementGhost` remain for the library's Place
   button, for Move, and as the fallback when no pose can be derived.
 - Sketch orientation: Klein re-poses the cutout into a centred product view, so the only record
-  of the drawn viewpoint is the user's ink. `sketchOrientation.ts` (pure, injected renderer)
-  rasterizes the strokes and chamfer-matches them against silhouettes of the mesh rendered at a
-  sweep of yaws by `SketchSolver.tsx` (one tiled render target, one readback, inside `<Canvas>`
-  so it reuses the app's GL context). `alignToBox` scales *uniformly* — the silhouette's aspect
-  ratio is the yaw signal, so do not stretch it to fit. When no yaw beats the median by 15% the
-  object is rotationally ambiguous and keeps the face-the-camera yaw. `composeYaw` post-
-  multiplies about the object's own +Y, the same convention as `poseOnSurface`'s manual yaw.
+  of the drawn viewpoint is the user's ink. `src/lib/sketchPose.ts` owns the whole decision as a
+  three-rung ladder, each rung falling to the next on any failure — read it before changing any
+  part of this:
+  1. **Vision — opt-in via `?vision=1`, off by default.** `SketchSolver.renderViews` renders the
+     mesh at 8 yaws as one numbered contact sheet, `renderInk` redraws the strokes, both upload
+     to Convex storage, and `convex/orientation.ts` asks a vision model through OpenRouter which
+     view matches. It is the rung that works when the mesh *isn't* a faithful likeness of the
+     sketch — common, since Tripo builds from Klein's reinterpretation rather than from the ink
+     — but two uploads and a round trip per object is too much latency to spend by default on
+     top of a generation pipeline that already runs one to two minutes.
+  2. **Chamfer.** `sketchOrientation.ts` (pure, injected renderer) chamfer-matches the ink
+     against silhouettes swept by `SketchSolver`. With a `window` it searches only the sector
+     the vision model picked; without one it sweeps the full circle and applies its confidence
+     gate. `alignToBox` scales *uniformly* — the silhouette's aspect ratio is the yaw signal, so
+     do not stretch it to fit. When no yaw beats the median by 15% the object is rotationally
+     ambiguous.
+  3. **Face the camera** — the yaw `orientOnSurface` already gave the anchor.
+  `composeYaw` post-multiplies about the object's own +Y, the same convention as
+  `poseOnSurface`'s manual yaw. Both renderers share one tiled render target and a single
+  readback inside `<Canvas>`, and `renderAtlas` must restore every piece of renderer state it
+  borrows — the viewport especially, or the whole app renders into a corner.
+- The vision rung needs `?vision=1` **and** `OPENROUTER_API_KEY` on the deployment. Without the
+  flag it is skipped silently (a normal placement); with the flag but no key the card says
+  orientation matching is unavailable. `OPENROUTER_VISION_MODEL` overrides the default
+  `google/gemini-3.8-flash` (~$0.005/sketch) with, say, `anthropic/claude-opus-5`.
+  `convex/orientationResult.ts` holds the schema, prompt and a deliberately tolerant parser,
+  with no Convex imports so `node --test` can exercise it.
 - Undo/redo is an inverse-operation stack (`src/lib/placementHistory.ts`), not array
   snapshots: placements are shared, so replaying a snapshot would revert other players.
 

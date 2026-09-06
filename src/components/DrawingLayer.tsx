@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useThree } from "@react-three/fiber";
-import { PerspectiveCamera } from "three";
+import { PerspectiveCamera, type Object3D } from "three";
 import { anchorDrawing, contactPoint, drawingBounds, type DrawingAnchor, type DrawingBounds, type Point, type Stroke } from "../lib/drawingPlacement";
 
 export type DrawingCapture = { image: HTMLCanvasElement; anchor: (strokes: Stroke[]) => DrawingAnchor };
@@ -13,7 +13,17 @@ export function DrawingBridge({ captureRef }: { captureRef: React.MutableRefObje
   const { gl, camera, scene } = useThree();
   useEffect(() => {
     captureRef.current = () => {
-      gl.render(scene, camera);
+      // A sketch still generating in the background leaves its ink hanging in the room
+      // (SketchGhost). It has to stay out of this capture: it is not this drawing's context,
+      // and Klein is told to read colored ink as instructions, so another sketch's leftover
+      // marks would bleed into this one's reference images.
+      const hiddenGhosts: Object3D[] = [];
+      scene.traverse((o) => { if (o.userData.sketchGhost && o.visible) { hiddenGhosts.push(o); o.visible = false; } });
+      try {
+        gl.render(scene, camera);
+      } finally {
+        for (const o of hiddenGhosts) o.visible = true;
+      }
       const image = document.createElement("canvas");
       // One capped snapshot avoids Retina-sized uploads and retains the viewport's aspect.
       const ratio = Math.min(1, 1280 / Math.max(gl.domElement.width, gl.domElement.height));

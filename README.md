@@ -262,6 +262,7 @@ finished object is shared with everyone in the room:
 ```sh
 npx convex env set FAL_KEY <key>        # fal: image edit + background removal
 npx convex env set TRIPO_API_KEY <key>  # Tripo: textured P1 models
+npx convex env set OPENROUTER_API_KEY <key>  # optional: `?vision=1` only, off by default
 npm run dev
 ```
 
